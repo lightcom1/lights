@@ -27,3 +27,8 @@ python zengge.py mode fire
 ```
 
 If colors don't respond, try the **Legacy** protocol in the app (Advanced) or pass `--legacy` to the script.
+
+## Mac app (`mac/`)
+
+A native macOS version with the same features. It streams pixel effects much faster than the browser can, and it keeps running in the background.
+To build it, run `mac/build.sh`. See [mac/README.md](mac/README.md).
