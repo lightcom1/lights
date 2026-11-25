@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Strip Studio</title>
+<title>LED control</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%23ff3c3c'/%3E%3Cstop offset='.33' stop-color='%23ffd000'/%3E%3Cstop offset='.66' stop-color='%2300e0ff'/%3E%3Cstop offset='1' stop-color='%237c5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%230d0f14'/%3E%3Crect x='6' y='26' width='52' height='12' rx='6' fill='url(%23g)'/%3E%3Cg fill='%23fff' opacity='.9'%3E%3Ccircle cx='14' cy='32' r='2.5'/%3E%3Ccircle cx='26' cy='32' r='2.5'/%3E%3Ccircle cx='38' cy='32' r='2.5'/%3E%3Ccircle cx='50' cy='32' r='2.5'/%3E%3C/g%3E%3C/svg%3E">
 <meta name="theme-color" content="#0d0f14">
 <style>
   :root {
@@ -81,6 +82,10 @@
   </div>
 
   <div class="grid">
+    <section class="full">
+      <h2>Custom modes <span class="note" style="text-transform:none;letter-spacing:0">— tap again to stop</span></h2>
+      <div class="modes" id="modes"></div>
+    </section>
     <section>
       <h2>Color</h2>
       <div class="row"><label>Pick</label><input type="color" id="color" value="#7c5cff"><button id="sendColor">Set</button></div>
@@ -92,16 +97,8 @@
       <h2>Mode settings</h2>
       <div class="row"><label>Speed</label><input type="range" id="speed" min="1" max="100" value="50"><span id="speedV">50</span></div>
       <div class="row"><label>Base color</label><input type="color" id="modeColor" value="#ff3c00"><span class="note">used by Breathe, Heartbeat, Strobe…</span></div>
-      <div class="row"><label>Sleep timer</label>
-        <select id="timer"><option value="0">off</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select>
-        <span class="note" id="timerV"></span>
-      </div>
     </section>
 
-    <section class="full">
-      <h2>Custom modes <span class="note" style="text-transform:none;letter-spacing:0">— tap again to stop</span></h2>
-      <div class="modes" id="modes"></div>
-    </section>
 
     <details class="full more">
       <summary>More: built-in effects, advanced &amp; log</summary>
@@ -472,23 +469,6 @@ function musicFrame() {
   return hsvToRgb(audio.hue + centroid * 240, 1, 0.08 + 0.92 * audio.level);
 }
 
-/* ---------- sleep timer ---------- */
-let timerEnd = 0;
-$('timer').onchange = () => {
-  const m = +$('timer').value;
-  timerEnd = m ? Date.now() + m * 60000 : 0;
-  log(m ? `Sleep timer: ${m} min (fades out the last minute)` : 'Sleep timer off');
-};
-setInterval(() => {
-  if (!timerEnd) { $('timerV').textContent = ''; return; }
-  const left = timerEnd - Date.now();
-  if (left <= 0) {
-    timerEnd = 0; $('timer').value = '0'; stopMode(); sendPayload(cmdPower(false)); showOrb([0, 0, 0]); log('Sleep timer: lights off');
-    return;
-  }
-  $('timerV').textContent = `${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')} left`;
-  if (left < 60000) { $('bright').value = Math.max(1, Math.round(left / 600)); $('brightV').textContent = $('bright').value; if (!current) { lastFrame = null; setRgb(hexToRgb($('color').value)); } }
-}, 1000);
 
 /* ---------- built-in effects & raw ---------- */
 $('fxSend').onclick = () => { stopMode(); sendPayload(cmdEffect(+$('fxNum').value, +$('speed').value, +$('bright').value)); };
