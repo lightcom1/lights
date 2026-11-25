@@ -395,7 +395,9 @@
             ><input type="number" id="pxWaves" value="2" min="1" max="6" style="width: 64px" />
             <label style="min-width: 0">LEDs</label
             ><input type="number" id="pxPoints" value="216" min="1" max="600" style="width: 72px" />
-            <span class="note">uses Background / Runner colors and Speed above</span>
+            <label style="min-width: 0" title="Send frames without waiting for the strip to confirm each piece">Fast</label
+            ><input type="checkbox" id="pxFast" checked />
+            <span class="note" id="pxFps"></span>
           </div>
 
           <h3 class="sub">My effects <span class="note">— your saved favorites from the browser below</span></h3>
@@ -735,7 +737,8 @@
           try {
             for (const pkt of pkts) {
               const w =
-                !(wr || pkt.length > 180) &&
+                !wr &&
+                pkt.length <= maxWrite &&
                 writeChar.properties.writeWithoutResponse &&
                 writeChar.writeValueWithoutResponse
                   ? writeChar.writeValueWithoutResponse(pkt)
@@ -1521,6 +1524,8 @@
           },
         },
       };
+      let pxFrames = 0,
+        pxFpsAt = 0;
       let pxActive = null,
         pxT = 0,
         pxLast = 0;
@@ -1541,6 +1546,7 @@
       });
       function stopPixels() {
         pxActive = null;
+        $('pxFps').textContent = '';
         document.querySelectorAll('#pxFx button').forEach((x) => x.classList.remove('active'));
       }
       function pixelTick(now) {
@@ -1549,7 +1555,14 @@
         pxT += ((now - pxLast) / 1000) * spd;
         pxLast = now;
         if (busy) return; // previous frame still being written — skip, stay smooth
-        sendPayload(cmdPixels(PIXEL_FX[pxActive].fn(pxT, pxPoints())), { quiet: true, withResponse: true });
+        const fast = $('pxFast').checked;
+        sendPayload(cmdPixels(PIXEL_FX[pxActive].fn(pxT, pxPoints())), { quiet: true, withResponse: !fast });
+        pxFrames++;
+        if (now - pxFpsAt >= 1000) {
+          $('pxFps').textContent = `${pxFrames} fps`;
+          pxFrames = 0;
+          pxFpsAt = now;
+        }
       }
 
       /* ---------- built-in effects & raw ---------- */
