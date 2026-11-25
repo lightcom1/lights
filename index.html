@@ -383,8 +383,8 @@
             <button id="pxTest">② Full test</button>
             <span class="note">① lights the first 48 LEDs red · green · blue (one short packet). ② does the whole strip red · green · blue. If nothing changes, switch format and retry:</span>
             <select id="pxFormat">
+              <option value="flux" selected>Format B</option>
               <option value="smear">Format A</option>
-              <option value="flux">Format B</option>
             </select>
           </div>
           <div class="fxgrid" id="pxFx"></div>
@@ -581,14 +581,29 @@
        *  first:     40 SEQ [80 if last] 00  TOTAL_HI TOTAL_LO  BYTES_TO_END  0B  data…
        *  follow-up: 40 SEQ [80 if last] IDX BYTES_TO_END  data…
        */
-      const FRAG_SIZE = 240;
+      // Every BLE write must fit the link MTU: bigger writes make Chrome fall back to a
+      // "long write" the controller doesn't support (GATT error 9). The MTU can't be read
+      // from a web page, so start optimistic, halve on failure, and remember what works.
+      let maxWrite = 160;
+      try {
+        maxWrite = +localStorage.getItem('led-maxwrite') || 160;
+      } catch (e) {}
+      function shrinkWrite(failedLen) {
+        maxWrite = Math.max(20, Math.floor(Math.min(maxWrite, failedLen) / 2));
+        try {
+          localStorage.setItem('led-maxwrite', maxWrite);
+        } catch (e) {}
+        log(`Write too big for this connection — using ${maxWrite}-byte pieces from now on`);
+      }
       function wrapFragments(payload) {
         seq = (seq + 1) & 0xff;
         const total = payload.length,
           out = [];
-        for (let i = 0, off = 0; off < total; i++, off += FRAG_SIZE) {
-          const chunk = payload.slice(off, off + FRAG_SIZE),
-            last = off + FRAG_SIZE >= total ? 0x80 : 0x00;
+        for (let i = 0, off = 0; off < total; i++) {
+          const size = maxWrite - (i === 0 ? 8 : 5),
+            chunk = payload.slice(off, off + size),
+            last = off + size >= total ? 0x80 : 0x00;
+          off += size;
           const head =
             i === 0
               ? [0x40, seq, last, 0, (total >> 8) & 0xff, total & 0xff, (chunk.length + 1) & 0xff, 0x0b]
@@ -716,7 +731,7 @@
         while (pending) {
           const { payload: p, quiet: q, withResponse: wr } = pending;
           pending = null;
-          const pkts = p.raw ? [p.raw] : p.length > FRAG_SIZE ? wrapFragments(p) : [wrap(p)];
+          const pkts = p.raw ? [p.raw] : p.length + 8 > maxWrite ? wrapFragments(p) : [wrap(p)];
           try {
             for (const pkt of pkts) {
               const w =
@@ -734,6 +749,12 @@
             }
           } catch (e) {
             log('Write failed: ' + errText(e));
+            // GATT "not supported" on a big write = over the MTU → shrink and retry this command
+            const big = !p.raw && p.length + 8 > 20 && maxWrite > 20;
+            if (big && e && e.name === 'NotSupportedError') {
+              shrinkWrite(p.length + 8);
+              if (!pending) pending = { payload: p, quiet: q, withResponse: wr };
+            }
           }
         }
         busy = false;
