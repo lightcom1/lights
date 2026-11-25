@@ -1,468 +1,997 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Strip Studio</title>
-<meta name="theme-color" content="#0d0f14">
-<style>
-  :root {
-    --bg: #0d0f14; --panel: #161a22; --panel2: #1e232e; --text: #e8ebf1; --muted: #8b93a5;
-    --accent: #7c5cff; --ok: #2ecc71; --bad: #ff5c6c; --line: #2a303d;
-    --glow: #000;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  }
-  .wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
-  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-  h1 { font-size: 20px; margin: 0; flex: 1; letter-spacing: .3px; }
-  .orb {
-    width: 44px; height: 44px; border-radius: 50%; background: var(--glow);
-    box-shadow: 0 0 24px 6px var(--glow); transition: background .08s, box-shadow .08s; border: 1px solid var(--line);
-  }
-  .status { font-size: 13px; color: var(--muted); }
-  .status b.on { color: var(--ok); } .status b.off { color: var(--bad); }
-  button {
-    background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
-    padding: 9px 14px; font: inherit; cursor: pointer;
-  }
-  button:hover { border-color: #3b4356; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.active { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
-  section h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 10px; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
-  label { font-size: 13px; color: var(--muted); min-width: 78px; }
-  input[type=range] { flex: 1; accent-color: var(--accent); min-width: 120px; }
-  input[type=color] { width: 54px; height: 38px; border: none; background: none; padding: 0; cursor: pointer; }
-  select, input[type=text], input[type=number] {
-    background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit;
-  }
-  input[type=text] { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, monospace; }
-  .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
-  .swatches button { aspect-ratio: 1; padding: 0; border-radius: 8px; }
-  .modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
-  .modes button { text-align: left; padding: 10px; }
-  .modes button span { display: block; font-size: 11px; color: var(--muted); }
-  #log {
-    height: 140px; overflow: auto; background: #0a0c10; border-radius: 8px; padding: 8px;
-    font: 12px/1.4 ui-monospace, Menlo, monospace; color: #9fb0c8; white-space: pre-wrap; word-break: break-all;
-  }
-  .note { font-size: 13px; color: var(--muted); }
-  .warn { background: #3a2a12; border: 1px solid #6b4a17; color: #ffd28a; padding: 10px 12px; border-radius: 10px; font-size: 14px; margin-bottom: 14px; display: none; }
-  .full { grid-column: 1 / -1; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div class="orb" id="orb"></div>
-    <h1>Strip Studio<br><span class="status">Status: <b class="off" id="st">disconnected</b></span></h1>
-    <button class="primary" id="connectBtn">Connect</button>
-    <button id="onBtn">On</button>
-    <button id="offBtn">Off</button>
-  </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LED control</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%23ff3c3c'/%3E%3Cstop offset='.33' stop-color='%23ffd000'/%3E%3Cstop offset='.66' stop-color='%2300e0ff'/%3E%3Cstop offset='1' stop-color='%237c5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%230d0f14'/%3E%3Crect x='6' y='26' width='52' height='12' rx='6' fill='url(%23g)'/%3E%3Cg fill='%23fff' opacity='.9'%3E%3Ccircle cx='14' cy='32' r='2.5'/%3E%3Ccircle cx='26' cy='32' r='2.5'/%3E%3Ccircle cx='38' cy='32' r='2.5'/%3E%3Ccircle cx='50' cy='32' r='2.5'/%3E%3C/g%3E%3C/svg%3E"
+    />
+    <meta name="theme-color" content="#0d0f14" />
+    <style>
+      :root {
+        --bg: #0d0f14;
+        --panel: #161a22;
+        --panel2: #1e232e;
+        --text: #e8ebf1;
+        --muted: #8b93a5;
+        --accent: #7c5cff;
+        --ok: #2ecc71;
+        --bad: #ff5c6c;
+        --line: #2a303d;
+        --glow: #000;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.45 system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+      }
+      .wrap {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+        flex: 1;
+        letter-spacing: 0.3px;
+      }
+      .orb {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: var(--glow);
+        box-shadow: 0 0 24px 6px var(--glow);
+        transition:
+          background 0.08s,
+          box-shadow 0.08s;
+        border: 1px solid var(--line);
+      }
+      .status {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .status b.on {
+        color: var(--ok);
+      }
+      .status b.off {
+        color: var(--bad);
+      }
+      button {
+        background: var(--panel2);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 9px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: #3b4356;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.active {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 14px;
+      }
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+      }
+      section h2 {
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--muted);
+        margin: 0 0 10px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 8px 0;
+      }
+      label {
+        font-size: 13px;
+        color: var(--muted);
+        min-width: 78px;
+      }
+      input[type='range'] {
+        flex: 1;
+        accent-color: var(--accent);
+        min-width: 120px;
+      }
+      input[type='color'] {
+        width: 54px;
+        height: 38px;
+        border: none;
+        background: none;
+        padding: 0;
+        cursor: pointer;
+      }
+      select,
+      input[type='text'],
+      input[type='number'] {
+        background: var(--panel2);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px;
+        font: inherit;
+      }
+      input[type='text'] {
+        flex: 1;
+        min-width: 0;
+        font-family: ui-monospace, Menlo, monospace;
+      }
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 6px;
+      }
+      .swatches button {
+        aspect-ratio: 1;
+        padding: 0;
+        border-radius: 8px;
+      }
+      .modes {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+        gap: 8px;
+      }
+      .modes button {
+        text-align: left;
+        padding: 10px;
+      }
+      .modes button span {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      #log {
+        height: 140px;
+        overflow: auto;
+        background: #0a0c10;
+        border-radius: 8px;
+        padding: 8px;
+        font:
+          12px/1.4 ui-monospace,
+          Menlo,
+          monospace;
+        color: #9fb0c8;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .note {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .warn {
+        background: #3a2a12;
+        border: 1px solid #6b4a17;
+        color: #ffd28a;
+        padding: 10px 12px;
+        border-radius: 10px;
+        font-size: 14px;
+        margin-bottom: 14px;
+        display: none;
+      }
+      .full {
+        grid-column: 1 / -1;
+      }
+      details.more {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+      details.more summary {
+        cursor: pointer;
+        padding: 14px;
+        color: var(--muted);
+        font-size: 14px;
+        list-style: none;
+        user-select: none;
+      }
+      details.more summary::-webkit-details-marker {
+        display: none;
+      }
+      details.more summary::before {
+        content: '▸';
+        display: inline-block;
+        width: 16px;
+        transition: transform 0.15s;
+      }
+      details.more[open] summary::before {
+        transform: rotate(90deg);
+      }
+      details.more .inner {
+        padding: 0 14px 14px;
+      }
+      details.more section {
+        background: var(--panel2);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="orb" id="orb"></div>
+        <h1>
+          Strip Studio<br /><span class="status"
+            >Status: <b class="off" id="st">disconnected</b></span
+          >
+        </h1>
+        <button class="primary" id="connectBtn">Connect</button>
+        <button id="onBtn">On</button>
+        <button id="offBtn">Off</button>
+      </header>
 
-  <div class="warn" id="nobt">
-    This browser doesn't support Web Bluetooth. Use <b>Chrome / Edge</b> on Android, Windows, macOS or Linux
-    (on iPhone, use the <b>Bluefy</b> browser). The page must be opened over <b>https://</b> or <b>http://localhost</b>.
-  </div>
-
-  <div class="grid">
-    <section>
-      <h2>Color</h2>
-      <div class="row"><label>Pick</label><input type="color" id="color" value="#7c5cff"><button id="sendColor">Set</button></div>
-      <div class="row"><label>Brightness</label><input type="range" id="bright" min="1" max="100" value="100"><span id="brightV">100</span></div>
-      <div class="swatches" id="swatches"></div>
-    </section>
-
-    <section>
-      <h2>Mode settings</h2>
-      <div class="row"><label>Speed</label><input type="range" id="speed" min="1" max="100" value="50"><span id="speedV">50</span></div>
-      <div class="row"><label>Base color</label><input type="color" id="modeColor" value="#ff3c00"><span class="note">used by Breathe, Heartbeat, Strobe…</span></div>
-      <div class="row"><label>Sleep timer</label>
-        <select id="timer"><option value="0">off</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select>
-        <span class="note" id="timerV"></span>
+      <div class="warn" id="nobt">
+        This browser doesn't support Web Bluetooth. Use <b>Chrome / Edge</b> on
+        Android, Windows, macOS or Linux (on iPhone, use the
+        <b>Bluefy</b> browser). The page must be opened over <b>https://</b> or
+        <b>http://localhost</b>.
       </div>
-      <div class="row"><button id="stopBtn">■ Stop mode</button></div>
-    </section>
 
-    <section class="full">
-      <h2>Custom modes <span class="note" style="text-transform:none;letter-spacing:0">— rendered live in your browser and streamed to the strip</span></h2>
-      <div class="modes" id="modes"></div>
-    </section>
+      <div class="grid">
+        <section class="full">
+          <h2>
+            Custom modes
+            <span class="note" style="text-transform: none; letter-spacing: 0"
+              >— tap again to stop</span
+            >
+          </h2>
+          <div class="modes" id="modes"></div>
+        </section>
+        <section>
+          <h2>Color</h2>
+          <div class="row">
+            <label>Pick</label
+            ><input type="color" id="color" value="#7c5cff" /><button
+              id="sendColor"
+            >
+              Set
+            </button>
+          </div>
+          <div class="row">
+            <label>Brightness</label
+            ><input
+              type="range"
+              id="bright"
+              min="1"
+              max="100"
+              value="100"
+            /><span id="brightV">100</span>
+          </div>
+          <div class="swatches" id="swatches"></div>
+        </section>
 
-    <section>
-      <h2>Built-in effects</h2>
-      <div class="row"><label>Effect #</label><input type="number" id="fxNum" min="1" max="255" value="1" style="width:80px"><button id="fxPrev">◀</button><button id="fxNext">▶</button><button id="fxSend">Play</button></div>
-      <p class="note">The controller's own programs (the same ones the ZENGGE app has). Uses the Speed and Brightness sliders.</p>
-    </section>
+        <section>
+          <h2>Mode settings</h2>
+          <div class="row">
+            <label>Speed</label
+            ><input type="range" id="speed" min="1" max="100" value="50" /><span
+              id="speedV"
+              >50</span
+            >
+          </div>
+          <div class="row">
+            <label>Base color</label
+            ><input type="color" id="modeColor" value="#ff3c00" /><span
+              class="note"
+              >used by Breathe &amp; Heartbeat</span
+            >
+          </div>
+        </section>
 
-    <section>
-      <h2>Advanced</h2>
-      <div class="row"><label>Protocol</label>
-        <select id="proto">
-          <option value="new">LEDnetWF (0x3B, newer)</option>
-          <option value="legacy">Legacy (0x31 / 0x71)</option>
-        </select>
+        <details class="full more">
+          <summary>More: built-in effects, advanced &amp; log</summary>
+          <div class="grid inner">
+            <section>
+              <h2>Built-in effects</h2>
+              <div class="row">
+                <label>Effect #</label
+                ><input
+                  type="number"
+                  id="fxNum"
+                  min="1"
+                  max="255"
+                  value="1"
+                  style="width: 80px"
+                /><button id="fxPrev">◀</button><button id="fxNext">▶</button
+                ><button id="fxSend">Play</button>
+              </div>
+              <p class="note">
+                The controller's own programs (the same ones the ZENGGE app
+                has). Uses the Speed and Brightness sliders.
+              </p>
+            </section>
+
+            <section>
+              <h2>Advanced</h2>
+              <div class="row">
+                <label>Protocol</label>
+                <select id="proto">
+                  <option value="new">LEDnetWF (0x3B, newer)</option>
+                  <option value="legacy">Legacy (0x31 / 0x71)</option>
+                </select>
+              </div>
+              <div class="row">
+                <label>Raw hex</label
+                ><input
+                  type="text"
+                  id="raw"
+                  placeholder="3b a1 00 64 64 00 00 00 00 00 00 00"
+                /><button id="rawSend">Send</button>
+              </div>
+              <p class="note">
+                Raw payloads are wrapped in the BLE header and checksummed
+                automatically. Tick to send exactly as typed:
+                <input type="checkbox" id="rawExact" />
+              </p>
+            </section>
+
+            <section class="full">
+              <h2>Log</h2>
+              <div id="log"></div>
+            </section>
+          </div>
+        </details>
       </div>
-      <div class="row"><label>Raw hex</label><input type="text" id="raw" placeholder="3b a1 00 64 64 00 00 00 00 00 00 00"><button id="rawSend">Send</button></div>
-      <p class="note">Raw payloads are wrapped in the BLE header and checksummed automatically. Tick to send exactly as typed:
-        <input type="checkbox" id="rawExact"></p>
-    </section>
+    </div>
 
-    <section class="full">
-      <h2>Log</h2>
-      <div id="log"></div>
-    </section>
-  </div>
-</div>
+    <script>
+      /* ============================================================
+       *  ZENGGE / LEDnetWF Bluetooth LE protocol
+       *  Service 0xFFFF, write characteristic 0xFF01, notify 0xFF02.
+       *  Every command is wrapped as:
+       *     00 SEQ 80 00 00 LEN LEN+1 0B  <payload incl. checksum>
+       * ============================================================ */
+      const uuid16 = (n) =>
+        `0000${n.toString(16).padStart(4, '0')}-0000-1000-8000-00805f9b34fb`;
+      const SERVICE = uuid16(0xffff),
+        WRITE_CHAR = uuid16(0xff01),
+        NOTIFY_CHAR = uuid16(0xff02);
 
-<script>
-/* ============================================================
- *  ZENGGE / LEDnetWF Bluetooth LE protocol
- *  Service 0xFFFF, write characteristic 0xFF01, notify 0xFF02.
- *  Every command is wrapped as:
- *     00 SEQ 80 00 00 LEN LEN+1 0B  <payload incl. checksum>
- * ============================================================ */
-const SERVICE = 0xffff, WRITE_CHAR = 0xff01, NOTIFY_CHAR = 0xff02;
-const NAME_PREFIXES = ['LEDnetWF', 'IOTWF', 'IOTB', 'Zengge', 'ZENGGE', 'LEDBLE', 'Triones', 'LED'];
+      const $ = (id) => document.getElementById(id);
+      const logEl = $('log');
+      function log(msg) {
+        const t = new Date().toLocaleTimeString();
+        logEl.textContent += `[${t}] ${msg}\n`;
+        if (logEl.textContent.length > 20000)
+          logEl.textContent = logEl.textContent.slice(-15000);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      const hex = (arr) =>
+        [...arr].map((b) => b.toString(16).padStart(2, '0')).join(' ');
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-const $ = id => document.getElementById(id);
-const logEl = $('log');
-function log(msg) {
-  const t = new Date().toLocaleTimeString();
-  logEl.textContent += `[${t}] ${msg}\n`;
-  if (logEl.textContent.length > 20000) logEl.textContent = logEl.textContent.slice(-15000);
-  logEl.scrollTop = logEl.scrollHeight;
-}
-const hex = arr => [...arr].map(b => b.toString(16).padStart(2, '0')).join(' ');
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      let device = null,
+        writeChar = null,
+        seq = 0;
+      let busy = false,
+        pending = null,
+        lastFrame = null;
+      let verbose = true;
 
-let device = null, writeChar = null, seq = 0;
-let busy = false, pending = null, lastFrame = null;
-let verbose = true;
+      function errText(e) {
+        if (e == null) return String(e);
+        if (typeof e === 'string') return e;
+        return (
+          [e.name, e.message, e.code]
+            .filter((x) => x != null && x !== '')
+            .join(': ') ||
+          JSON.stringify(e) ||
+          String(e)
+        );
+      }
+      function checksum(bytes) {
+        return bytes.reduce((s, b) => (s + b) & 0xff, 0);
+      }
+      function withChecksum(payload) {
+        return [...payload, checksum(payload)];
+      }
+      function wrap(payload) {
+        seq = (seq + 1) & 0xff;
+        const len = payload.length;
+        return new Uint8Array([
+          0x00,
+          seq,
+          0x80,
+          0x00,
+          0x00,
+          len,
+          len + 1,
+          0x0b,
+          ...payload,
+        ]);
+      }
 
-function checksum(bytes) { return bytes.reduce((s, b) => (s + b) & 0xff, 0); }
-function withChecksum(payload) { return [...payload, checksum(payload)]; }
-function wrap(payload) {
-  seq = (seq + 1) & 0xff;
-  const len = payload.length;
-  return new Uint8Array([0x00, seq, 0x80, 0x00, 0x00, len, len + 1, 0x0b, ...payload]);
-}
+      /* ---------- color math ---------- */
+      function rgbToHsv(r, g, b) {
+        r /= 255;
+        g /= 255;
+        b /= 255;
+        const max = Math.max(r, g, b),
+          min = Math.min(r, g, b),
+          d = max - min;
+        let h = 0;
+        if (d) {
+          if (max === r) h = ((g - b) / d) % 6;
+          else if (max === g) h = (b - r) / d + 2;
+          else h = (r - g) / d + 4;
+          h *= 60;
+          if (h < 0) h += 360;
+        }
+        return [h, max ? d / max : 0, max];
+      }
+      function hsvToRgb(h, s, v) {
+        h = ((h % 360) + 360) % 360;
+        const c = v * s,
+          x = c * (1 - Math.abs(((h / 60) % 2) - 1)),
+          m = v - c;
+        let [r, g, b] =
+          h < 60
+            ? [c, x, 0]
+            : h < 120
+              ? [x, c, 0]
+              : h < 180
+                ? [0, c, x]
+                : h < 240
+                  ? [0, x, c]
+                  : h < 300
+                    ? [x, 0, c]
+                    : [c, 0, x];
+        return [
+          Math.round((r + m) * 255),
+          Math.round((g + m) * 255),
+          Math.round((b + m) * 255),
+        ];
+      }
+      const hexToRgb = (h) =>
+        [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const mix = (c1, c2, t) =>
+        c1.map((v, i) => Math.round(lerp(v, c2[i], t)));
+      const scale = (c, k) => c.map((v) => Math.round(clamp(v * k, 0, 255)));
 
-/* ---------- color math ---------- */
-function rgbToHsv(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
-  let h = 0;
-  if (d) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60; if (h < 0) h += 360;
-  }
-  return [h, max ? d / max : 0, max];
-}
-function hsvToRgb(h, s, v) {
-  h = ((h % 360) + 360) % 360;
-  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
-  let [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
-  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
-}
-const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-const lerp = (a, b, t) => a + (b - a) * t;
-const mix = (c1, c2, t) => c1.map((v, i) => Math.round(lerp(v, c2[i], t)));
-const scale = (c, k) => c.map(v => Math.round(clamp(v * k, 0, 255)));
+      /* ---------- command builders ---------- */
+      const proto = () => $('proto').value;
+      const masterBright = () => +$('bright').value / 100;
 
-/* ---------- command builders ---------- */
-const proto = () => $('proto').value;
-const masterBright = () => +$('bright').value / 100;
+      function cmdPower(on) {
+        if (proto() === 'legacy')
+          return withChecksum([0x71, on ? 0x23 : 0x24, 0x0f]);
+        return withChecksum([
+          0x3b,
+          on ? 0x23 : 0x24,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0x32,
+          0,
+          0,
+        ]);
+      }
+      function cmdRgb(r, g, b) {
+        [r, g, b] = scale([r, g, b], masterBright());
+        if (proto() === 'legacy')
+          return withChecksum([0x31, r, g, b, 0x00, 0x00, 0x0f]);
+        const [h, s, v] = rgbToHsv(r, g, b);
+        return withChecksum([
+          0x3b,
+          0xa1,
+          Math.round(h / 2),
+          Math.round(s * 100),
+          Math.round(v * 100),
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+        ]);
+      }
+      function cmdEffect(n, speed, bright) {
+        if (proto() === 'legacy') {
+          // legacy built-ins are 0x25..0x38; map 1..20 -> 0x25..
+          const mode = n <= 20 ? 0x24 + n : n;
+          const delay = clamp(Math.round(31 - speed * 0.3), 1, 31);
+          return withChecksum([0x61, mode, delay, 0x0f]);
+        }
+        return withChecksum([
+          0x38,
+          n & 0xff,
+          clamp(speed, 1, 100),
+          clamp(bright, 1, 100),
+        ]);
+      }
 
-function cmdPower(on) {
-  if (proto() === 'legacy') return withChecksum([0x71, on ? 0x23 : 0x24, 0x0f]);
-  return withChecksum([0x3b, on ? 0x23 : 0x24, 0, 0, 0, 0, 0, 0, 0, 0x32, 0, 0]);
-}
-function cmdRgb(r, g, b) {
-  [r, g, b] = scale([r, g, b], masterBright());
-  if (proto() === 'legacy') return withChecksum([0x31, r, g, b, 0x00, 0x00, 0x0f]);
-  const [h, s, v] = rgbToHsv(r, g, b);
-  return withChecksum([0x3b, 0xa1, Math.round(h / 2), Math.round(s * 100), Math.round(v * 100), 0, 0, 0, 0, 0, 0, 0]);
-}
-function cmdEffect(n, speed, bright) {
-  if (proto() === 'legacy') {
-    // legacy built-ins are 0x25..0x38; map 1..20 -> 0x25..
-    const mode = n <= 20 ? 0x24 + n : n;
-    const delay = clamp(Math.round(31 - speed * 0.3), 1, 31);
-    return withChecksum([0x61, mode, delay, 0x0f]);
-  }
-  return withChecksum([0x38, n & 0xff, clamp(speed, 1, 100), clamp(bright, 1, 100)]);
-}
+      /* ---------- transport (drops stale frames so effects stay smooth) ---------- */
+      async function sendPayload(payload, { quiet = false } = {}) {
+        if (!writeChar) {
+          if (!quiet) log('Not connected');
+          return;
+        }
+        pending = { payload, quiet };
+        if (busy) return;
+        busy = true;
+        while (pending) {
+          const { payload: p, quiet: q } = pending;
+          pending = null;
+          const pkt = p.raw ? p.raw : wrap(p);
+          try {
+            if (
+              writeChar.properties.writeWithoutResponse &&
+              writeChar.writeValueWithoutResponse
+            )
+              await writeChar.writeValueWithoutResponse(pkt);
+            else await writeChar.writeValue(pkt);
+            if (!q && verbose) log('→ ' + hex(pkt));
+          } catch (e) {
+            log('Write failed: ' + errText(e));
+          }
+        }
+        busy = false;
+      }
+      function showOrb(rgb) {
+        const c = `rgb(${scale(rgb, Math.max(masterBright(), 0.15)).join(',')})`;
+        document.documentElement.style.setProperty('--glow', c);
+      }
+      function setRgb(rgb, quiet = true) {
+        showOrb(rgb);
+        // avoid resending identical frames
+        const key = rgb.join(',') + '|' + masterBright();
+        if (quiet && key === lastFrame) return;
+        lastFrame = key;
+        sendPayload(cmdRgb(...rgb), { quiet });
+      }
 
-/* ---------- transport (drops stale frames so effects stay smooth) ---------- */
-async function sendPayload(payload, { quiet = false } = {}) {
-  if (!writeChar) { if (!quiet) log('Not connected'); return; }
-  pending = { payload, quiet };
-  if (busy) return;
-  busy = true;
-  while (pending) {
-    const { payload: p, quiet: q } = pending; pending = null;
-    const pkt = p.raw ? p.raw : wrap(p);
-    try {
-      if (writeChar.properties.writeWithoutResponse && writeChar.writeValueWithoutResponse)
-        await writeChar.writeValueWithoutResponse(pkt);
-      else await writeChar.writeValue(pkt);
-      if (!q && verbose) log('→ ' + hex(pkt));
-    } catch (e) { log('Write failed: ' + e.message); }
-  }
-  busy = false;
-}
-function showOrb(rgb) {
-  const c = `rgb(${scale(rgb, Math.max(masterBright(), .15)).join(',')})`;
-  document.documentElement.style.setProperty('--glow', c);
-}
-function setRgb(rgb, quiet = true) {
-  showOrb(rgb);
-  // avoid resending identical frames
-  const key = rgb.join(',') + '|' + masterBright();
-  if (quiet && key === lastFrame) return;
-  lastFrame = key;
-  sendPayload(cmdRgb(...rgb), { quiet });
-}
+      /* ---------- connection ---------- */
+      async function connect() {
+        if (!navigator.bluetooth) {
+          $('nobt').style.display = 'block';
+          return;
+        }
+        try {
+          // 1) Reconnect straight to a strip this browser already paired with (no picker)
+          if (navigator.bluetooth.getDevices) {
+            for (const d of await navigator.bluetooth.getDevices()) {
+              try {
+                device = d;
+                device.addEventListener('gattserverdisconnected', onDisconnect);
+                log('Reconnecting to saved strip ' + (d.name || '') + '…');
+                await Promise.race([
+                  openGatt(),
+                  new Promise((_, rej) =>
+                    setTimeout(() => rej(new Error('timeout')), 6000),
+                  ),
+                ]);
+                return;
+              } catch (e) {
+                device.removeEventListener(
+                  'gattserverdisconnected',
+                  onDisconnect,
+                );
+                device = null;
+              }
+            }
+          }
+          // 2) Otherwise show every nearby device — the strip doesn't broadcast a name, so name filters miss it
+          log(
+            'Pick your strip from the list (it may show as "Unknown or unsupported device"). Close the ZENGGE app first!',
+          );
+          device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [SERVICE],
+          });
+          device.addEventListener('gattserverdisconnected', onDisconnect);
+          await openGatt();
+        } catch (e) {
+          log('Connect error: ' + errText(e));
+          $('st').textContent = 'disconnected';
+          $('st').className = 'off';
+        }
+      }
+      async function openGatt() {
+        $('st').textContent = 'connecting…';
+        const server = await device.gatt.connect();
+        const svc = await server.getPrimaryService(SERVICE);
+        writeChar = await svc.getCharacteristic(WRITE_CHAR);
+        try {
+          const n = await svc.getCharacteristic(NOTIFY_CHAR);
+          await n.startNotifications();
+          n.addEventListener('characteristicvaluechanged', (ev) =>
+            log('← ' + hex(new Uint8Array(ev.target.value.buffer))),
+          );
+        } catch (e) {
+          log('(no notify characteristic: ' + errText(e) + ')');
+        }
+        $('st').textContent = 'connected';
+        $('st').className = 'on';
+        $('connectBtn').textContent = 'Disconnect';
+        log('Connected to ' + (device.name || device.id));
+      }
+      async function onDisconnect() {
+        writeChar = null;
+        $('st').textContent = 'disconnected';
+        $('st').className = 'off';
+        $('connectBtn').textContent = 'Connect';
+        log('Disconnected');
+        $('devname').textContent = '';
+        if (device && !manualDisconnect) {
+          log('Reconnecting…');
+          for (let i = 0; i < 5 && device && !writeChar; i++) {
+            try {
+              await openGatt();
+            } catch (e) {
+              await new Promise((r) => setTimeout(r, 1500));
+            }
+          }
+        }
+      }
+      let manualDisconnect = false;
+      $('connectBtn').onclick = () => {
+        if (device && device.gatt.connected) {
+          manualDisconnect = true;
+          stopMode();
+          device.gatt.disconnect();
+          device = null;
+        } else {
+          manualDisconnect = false;
+          connect();
+        }
+      };
+      $('onBtn').onclick = () => sendPayload(cmdPower(true));
+      $('offBtn').onclick = () => {
+        stopMode();
+        sendPayload(cmdPower(false));
+        showOrb([0, 0, 0]);
+      };
 
-/* ---------- connection ---------- */
-async function connect() {
-  if (!navigator.bluetooth) { $('nobt').style.display = 'block'; return; }
-  try {
-    log('Scanning… pick your strip (usually named LEDnetWF…). Close the ZENGGE app first!');
-    device = await navigator.bluetooth.requestDevice({
-      filters: [...NAME_PREFIXES.map(namePrefix => ({ namePrefix })), { services: [SERVICE] }],
-      optionalServices: [SERVICE],
-    });
-    device.addEventListener('gattserverdisconnected', onDisconnect);
-    await openGatt();
-  } catch (e) { log('Connect error: ' + e.message); }
-}
-async function openGatt() {
-  $('st').textContent = 'connecting…';
-  const server = await device.gatt.connect();
-  const svc = await server.getPrimaryService(SERVICE);
-  writeChar = await svc.getCharacteristic(WRITE_CHAR);
-  try {
-    const n = await svc.getCharacteristic(NOTIFY_CHAR);
-    await n.startNotifications();
-    n.addEventListener('characteristicvaluechanged', ev => log('← ' + hex(new Uint8Array(ev.target.value.buffer))));
-  } catch (e) { log('(no notify characteristic: ' + e.message + ')'); }
-  $('st').textContent = 'connected'; $('st').className = 'on';
-  $('connectBtn').textContent = 'Disconnect';
-  log('Connected to ' + (device.name || device.id));
-}
-async function onDisconnect() {
-  writeChar = null;
-  $('st').textContent = 'disconnected'; $('st').className = 'off';
-  $('connectBtn').textContent = 'Connect';
-  log('Disconnected');
-  if (device && !manualDisconnect) {
-    log('Reconnecting…');
-    for (let i = 0; i < 5 && device && !writeChar; i++) {
-      try { await openGatt(); } catch (e) { await new Promise(r => setTimeout(r, 1500)); }
-    }
-  }
-}
-let manualDisconnect = false;
-$('connectBtn').onclick = () => {
-  if (device && device.gatt.connected) { manualDisconnect = true; stopMode(); device.gatt.disconnect(); device = null; }
-  else { manualDisconnect = false; connect(); }
-};
-$('onBtn').onclick = () => sendPayload(cmdPower(true));
-$('offBtn').onclick = () => { stopMode(); sendPayload(cmdPower(false)); showOrb([0, 0, 0]); };
+      /* ---------- static color ---------- */
+      const SW = [
+        '#ff0000',
+        '#ff6a00',
+        '#ffc400',
+        '#00ff40',
+        '#00e5ff',
+        '#0040ff',
+        '#8a2be2',
+        '#ff00aa',
+        '#ffffff',
+        '#ffd9a0',
+        '#ff8c5a',
+        '#40ffb0',
+        '#3a7bff',
+        '#c070ff',
+        '#ff4060',
+        '#000000',
+      ];
+      SW.forEach((c) => {
+        const b = document.createElement('button');
+        b.style.background = c;
+        b.title = c;
+        b.onclick = () => {
+          stopMode();
+          $('color').value = c;
+          setRgb(hexToRgb(c), false);
+        };
+        $('swatches').appendChild(b);
+      });
+      $('sendColor').onclick = () => {
+        stopMode();
+        setRgb(hexToRgb($('color').value), false);
+      };
+      $('color').oninput = () => {
+        stopMode();
+        setRgb(hexToRgb($('color').value));
+      };
+      $('bright').oninput = () => {
+        $('brightV').textContent = $('bright').value;
+        if (!current) setRgb(hexToRgb($('color').value));
+      };
+      $('speed').oninput = () => ($('speedV').textContent = $('speed').value);
 
-/* ---------- static color ---------- */
-const SW = ['#ff0000', '#ff6a00', '#ffc400', '#00ff40', '#00e5ff', '#0040ff', '#8a2be2', '#ff00aa',
-            '#ffffff', '#ffd9a0', '#ff8c5a', '#40ffb0', '#3a7bff', '#c070ff', '#ff4060', '#000000'];
-SW.forEach(c => {
-  const b = document.createElement('button'); b.style.background = c; b.title = c;
-  b.onclick = () => { stopMode(); $('color').value = c; setRgb(hexToRgb(c), false); };
-  $('swatches').appendChild(b);
-});
-$('sendColor').onclick = () => { stopMode(); setRgb(hexToRgb($('color').value), false); };
-$('color').oninput = () => { stopMode(); setRgb(hexToRgb($('color').value)); };
-$('bright').oninput = () => {
-  $('brightV').textContent = $('bright').value;
-  if (!current) setRgb(hexToRgb($('color').value));
-};
-$('speed').oninput = () => $('speedV').textContent = $('speed').value;
+      /* ============================================================
+       *  CUSTOM MODES — each is f(t, state) -> [r,g,b]
+       *  t = seconds since start, scaled by speed
+       * ============================================================ */
+      const noise = (() => {
+        // smooth 1D value noise
+        const p = Array.from({ length: 256 }, () => Math.random());
+        return (x) => {
+          const i = Math.floor(x),
+            f = x - i,
+            u = f * f * (3 - 2 * f);
+          return lerp(p[i & 255], p[(i + 1) & 255], u);
+        };
+      })();
+      const base = () => hexToRgb($('modeColor').value);
 
-/* ============================================================
- *  CUSTOM MODES — each is f(t, state) -> [r,g,b]
- *  t = seconds since start, scaled by speed
- * ============================================================ */
-const noise = (() => { // smooth 1D value noise
-  const p = Array.from({ length: 256 }, () => Math.random());
-  return x => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return lerp(p[i & 255], p[(i + 1) & 255], u); };
-})();
-const base = () => hexToRgb($('modeColor').value);
+      const MODES = {
+        rainbow: {
+          name: 'Rainbow',
+          desc: 'smooth hue cycle',
+          fn: (t) => hsvToRgb(t * 40, 1, 1),
+        },
+        breathe: {
+          name: 'Breathe',
+          desc: 'slow inhale/exhale',
+          fn: (t) =>
+            scale(
+              base(),
+              0.05 + 0.95 * Math.pow((Math.sin(t * 1.6) + 1) / 2, 2.2),
+            ),
+        },
+        fire: {
+          name: 'Fireplace',
+          desc: 'flickering embers',
+          fn: (t) => {
+            const n = noise(t * 6) * 0.6 + noise(t * 17 + 50) * 0.4;
+            return hsvToRgb(8 + n * 22, 1, 0.35 + n * 0.65);
+          },
+        },
+        candle: {
+          name: 'Candle',
+          desc: 'warm & cozy',
+          fn: (t) => {
+            const n = noise(t * 3) * 0.7 + noise(t * 11 + 9) * 0.3;
+            return scale([255, 120, 25], 0.45 + n * 0.55);
+          },
+        },
+        aurora: {
+          name: 'Aurora',
+          desc: 'northern lights',
+          fn: (t) => {
+            const h = 120 + 160 * noise(t * 0.35);
+            return hsvToRgb(h, 0.85, 0.4 + 0.6 * noise(t * 0.8 + 100));
+          },
+        },
+        ocean: {
+          name: 'Ocean',
+          desc: 'rolling waves',
+          fn: (t) => {
+            const w =
+              (Math.sin(t * 0.9) + Math.sin(t * 1.7 + 1) * 0.5 + 1.5) / 3;
+            return hsvToRgb(185 + 35 * w, 0.9, 0.35 + 0.65 * w);
+          },
+        },
+        lava: {
+          name: 'Lava lamp',
+          desc: 'red ↔ purple blobs',
+          fn: (t) =>
+            hsvToRgb(
+              330 + 50 * noise(t * 0.5),
+              1,
+              0.5 + 0.5 * noise(t * 0.7 + 30),
+            ),
+        },
+        storm: {
+          name: 'Thunderstorm',
+          desc: 'random lightning',
+          fn: (t, s) => {
+            if (!s.next || t > s.next) {
+              s.flash = t;
+              s.next = t + 1.5 + Math.random() * 6;
+              s.double = Math.random() < 0.5;
+            }
+            const dt = t - s.flash;
+            const f =
+              Math.exp(-dt * 12) +
+              (s.double
+                ? Math.exp(-Math.max(0, dt - 0.18) * 14) * (dt > 0.18)
+                : 0);
+            return mix([5, 10, 40], [230, 235, 255], clamp(f, 0, 1));
+          },
+        },
+        heartbeat: {
+          name: 'Heartbeat',
+          desc: 'lub-dub pulse',
+          fn: (t) => {
+            const p = (t * 0.9) % 1;
+            const k =
+              Math.exp(-Math.pow((p - 0.1) / 0.04, 2)) +
+              0.7 * Math.exp(-Math.pow((p - 0.3) / 0.05, 2));
+            return scale(base(), 0.04 + 0.96 * k);
+          },
+        },
+        sunset: {
+          name: 'Sunset',
+          desc: 'gold → pink → indigo',
+          fn: (t) => {
+            const stops = [
+              [255, 170, 40],
+              [255, 80, 60],
+              [200, 40, 120],
+              [60, 20, 140],
+              [255, 170, 40],
+            ];
+            const x = ((t * 0.08) % 1) * (stops.length - 1),
+              i = Math.floor(x);
+            return mix(stops[i], stops[i + 1], x - i);
+          },
+        },
+      };
 
-const MODES = {
-  rainbow:   { name: 'Rainbow', desc: 'smooth hue cycle', fn: t => hsvToRgb(t * 40, 1, 1) },
-  breathe:   { name: 'Breathe', desc: 'slow inhale/exhale', fn: t => scale(base(), 0.05 + 0.95 * Math.pow((Math.sin(t * 1.6) + 1) / 2, 2.2)) },
-  fire:      { name: 'Fireplace', desc: 'flickering embers', fn: t => {
-                 const n = noise(t * 6) * 0.6 + noise(t * 17 + 50) * 0.4;
-                 return hsvToRgb(8 + n * 22, 1, 0.35 + n * 0.65); } },
-  candle:    { name: 'Candle', desc: 'warm & cozy', fn: t => {
-                 const n = noise(t * 3) * 0.7 + noise(t * 11 + 9) * 0.3;
-                 return scale([255, 120, 25], 0.45 + n * 0.55); } },
-  aurora:    { name: 'Aurora', desc: 'northern lights', fn: t => {
-                 const h = 120 + 160 * noise(t * 0.35);
-                 return hsvToRgb(h, 0.85, 0.4 + 0.6 * noise(t * 0.8 + 100)); } },
-  ocean:     { name: 'Ocean', desc: 'rolling waves', fn: t => {
-                 const w = (Math.sin(t * 0.9) + Math.sin(t * 1.7 + 1) * 0.5 + 1.5) / 3;
-                 return hsvToRgb(185 + 35 * w, 0.9, 0.35 + 0.65 * w); } },
-  lava:      { name: 'Lava lamp', desc: 'red ↔ purple blobs', fn: t => hsvToRgb(330 + 50 * noise(t * 0.5), 1, 0.5 + 0.5 * noise(t * 0.7 + 30)) },
-  storm:     { name: 'Thunderstorm', desc: 'random lightning', fn: (t, s) => {
-                 if (!s.next || t > s.next) { s.flash = t; s.next = t + 1.5 + Math.random() * 6; s.double = Math.random() < 0.5; }
-                 const dt = t - s.flash;
-                 const f = Math.exp(-dt * 12) + (s.double ? Math.exp(-Math.max(0, dt - 0.18) * 14) * (dt > 0.18) : 0);
-                 return mix([5, 10, 40], [230, 235, 255], clamp(f, 0, 1)); } },
-  heartbeat: { name: 'Heartbeat', desc: 'lub-dub pulse', fn: t => {
-                 const p = (t * 0.9) % 1;
-                 const k = Math.exp(-Math.pow((p - 0.1) / 0.04, 2)) + 0.7 * Math.exp(-Math.pow((p - 0.3) / 0.05, 2));
-                 return scale(base(), 0.04 + 0.96 * k); } },
-  police:    { name: 'Police', desc: 'red / blue strobe', fn: t => {
-                 const p = (t * 2) % 2, sub = (p % 1) * 6 | 0;
-                 if (sub % 2) return [0, 0, 0];
-                 return p < 1 ? [255, 0, 0] : [0, 30, 255]; } },
-  strobe:    { name: 'Strobe', desc: 'party flash', fn: t => ((t * 8) % 1) < 0.25 ? base() : [0, 0, 0] },
-  disco:     { name: 'Disco', desc: 'random color hits', fn: (t, s) => {
-                 const beat = Math.floor(t * 2.5);
-                 if (beat !== s.beat) { s.beat = beat; s.c = hsvToRgb(Math.random() * 360, 1, 1); }
-                 return scale(s.c, 1 - ((t * 2.5) % 1) * 0.7); } },
-  sunset:    { name: 'Sunset', desc: 'gold → pink → indigo', fn: t => {
-                 const stops = [[255, 170, 40], [255, 80, 60], [200, 40, 120], [60, 20, 140], [255, 170, 40]];
-                 const x = (t * 0.08) % 1 * (stops.length - 1), i = Math.floor(x);
-                 return mix(stops[i], stops[i + 1], x - i); } },
-  matrix:    { name: 'Matrix', desc: 'glitchy green', fn: t => {
-                 const g = noise(t * 25) > 0.75 ? 1 : 0.25 + 0.35 * noise(t * 2);
-                 return scale([0, 255, 60], g); } },
-  sunrise:   { name: 'Wake-up sunrise', desc: '20 min, real-time', realtime: true, fn: t => {
-                 const x = clamp(t / (20 * 60), 0, 1);
-                 const c = x < 0.4 ? mix([0, 0, 0], [120, 10, 0], x / 0.4)
-                         : x < 0.75 ? mix([120, 10, 0], [255, 110, 20], (x - 0.4) / 0.35)
-                         : mix([255, 110, 20], [255, 230, 190], (x - 0.75) / 0.25);
-                 return c; } },
-  music:     { name: '🎤 Music', desc: 'reacts to your mic', setup: setupMic, fn: musicFrame },
-};
+      /* Keep the screen on while a live mode runs (iOS suspends apps in background) */
+      let wakeLock = null;
+      async function keepAwake(on) {
+        try {
+          if (on && 'wakeLock' in navigator && !wakeLock) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => (wakeLock = null));
+          }
+          if (!on && wakeLock) {
+            await wakeLock.release();
+            wakeLock = null;
+          }
+        } catch (e) {
+          /* not supported */
+        }
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && current) keepAwake(true);
+      });
 
-let current = null, startTime = 0, rafId = null, state = {}, lastSend = 0, simTime = 0, lastTick = 0;
-const FPS = 20;
+      let current = null,
+        startTime = 0,
+        rafId = null,
+        state = {},
+        lastSend = 0,
+        simTime = 0,
+        lastTick = 0;
+      const FPS = 20;
 
-function startMode(key) {
-  stopMode(false);
-  const m = MODES[key];
-  current = key; state = {}; startTime = performance.now(); simTime = 0; lastTick = startTime;
-  document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('active', b.dataset.k === key));
-  log('Mode: ' + m.name);
-  const go = () => { rafId = requestAnimationFrame(tick); };
-  if (m.setup) m.setup().then(go).catch(e => { log('Mode failed: ' + e.message); stopMode(); });
-  else go();
-}
-function tick(now) {
-  if (!current) return;
-  const m = MODES[current];
-  const dt = (now - lastTick) / 1000; lastTick = now;
-  const spd = m.realtime ? 1 : Math.pow(4, (+$('speed').value - 50) / 50); // 0.25x .. 4x
-  simTime += dt * spd;
-  if (now - lastSend >= 1000 / FPS) {
-    lastSend = now;
-    setRgb(m.fn(simTime, state));
-  }
-  rafId = requestAnimationFrame(tick);
-}
-function stopMode(clear = true) {
-  if (rafId) cancelAnimationFrame(rafId);
-  rafId = null;
-  if (current && MODES[current].teardown) MODES[current].teardown();
-  current = null; lastFrame = null;
-  if (clear) document.querySelectorAll('.modes button').forEach(b => b.classList.remove('active'));
-}
-$('stopBtn').onclick = () => stopMode();
+      function startMode(key) {
+        stopMode(false);
+        const m = MODES[key];
+        current = key;
+        state = {};
+        keepAwake(true);
+        startTime = performance.now();
+        simTime = 0;
+        lastTick = startTime;
+        document
+          .querySelectorAll('.modes button')
+          .forEach((b) => b.classList.toggle('active', b.dataset.k === key));
+        log('Mode: ' + m.name);
+        const go = () => {
+          rafId = true;
+        };
+        if (m.setup)
+          m.setup()
+            .then(go)
+            .catch((e) => {
+              log('Mode failed: ' + errText(e));
+              stopMode();
+            });
+        else go();
+      }
+      function tick(now) {
+        if (!current) return;
+        const m = MODES[current];
+        const dt = (now - lastTick) / 1000;
+        lastTick = now;
+        const spd = m.realtime ? 1 : Math.pow(4, (+$('speed').value - 50) / 50); // 0.25x .. 4x
+        simTime += dt * spd;
+        if (now - lastSend >= 1000 / FPS - 10) {
+          lastSend = now;
+          setRgb(m.fn(simTime, state));
+        }
+      }
+      function stopMode(clear = true) {
+        rafId = null;
+        if (current && MODES[current].teardown) MODES[current].teardown();
+        current = null;
+        lastFrame = null;
+        keepAwake(false);
+        if (clear)
+          document
+            .querySelectorAll('.modes button')
+            .forEach((b) => b.classList.remove('active'));
+      }
 
-Object.entries(MODES).forEach(([k, m]) => {
-  const b = document.createElement('button'); b.dataset.k = k;
-  b.innerHTML = `${m.name}<span>${m.desc}</span>`;
-  b.onclick = () => startMode(k);
-  $('modes').appendChild(b);
-});
+      Object.entries(MODES).forEach(([k, m]) => {
+        const b = document.createElement('button');
+        b.dataset.k = k;
+        b.innerHTML = `${m.name}<span>${m.desc}</span>`;
+        b.onclick = () => (current === k ? stopMode() : startMode(k));
+        $('modes').appendChild(b);
+      });
 
-/* Background tabs throttle requestAnimationFrame — keep effects running with a timer fallback */
-setInterval(() => { if (current && document.hidden) tick(performance.now()); }, 1000 / FPS);
+      /* Chrome freezes requestAnimationFrame and throttles timers in hidden/covered tabs,
+       * but timers inside a Web Worker keep firing — so the effect clock lives in a worker. */
+      const clock = new Worker(
+        URL.createObjectURL(
+          new Blob(
+            [`setInterval(() => postMessage(0), ${Math.round(1000 / FPS)});`],
+            { type: 'text/javascript' },
+          ),
+        ),
+      );
+      clock.onmessage = () => {
+        if (current && rafId) tick(performance.now());
+      };
 
-/* ---------- music mode (Web Audio) ---------- */
-let audio = null;
-async function setupMic() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-  const ctx = new AudioContext();
-  const src = ctx.createMediaStreamSource(stream);
-  const an = ctx.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.6;
-  src.connect(an);
-  audio = { ctx, an, stream, buf: new Uint8Array(an.frequencyBinCount), avg: 20, hue: 0, level: 0 };
-  MODES.music.teardown = () => { stream.getTracks().forEach(t => t.stop()); ctx.close(); audio = null; };
-}
-function musicFrame() {
-  if (!audio) return [0, 0, 0];
-  const { an, buf } = audio;
-  an.getByteFrequencyData(buf);
-  const binHz = audio.ctx.sampleRate / an.fftSize;
-  let bass = 0, nb = 0, tot = 0, wsum = 0;
-  for (let i = 1; i < buf.length; i++) {
-    const f = i * binHz;
-    if (f < 160) { bass += buf[i]; nb++; }
-    tot += buf[i]; wsum += buf[i] * i;
-  }
-  bass /= nb || 1;
-  audio.avg = audio.avg * 0.97 + bass * 0.03;                // adaptive gain
-  const hit = clamp((bass - audio.avg * 0.9) / (audio.avg * 0.8 + 10), 0, 1);
-  audio.level = Math.max(hit, audio.level * 0.82);           // fast attack, smooth decay
-  const centroid = tot ? wsum / tot / buf.length : 0;        // brightness of sound → hue
-  audio.hue = (audio.hue + 0.6 + hit * 8) % 360;
-  return hsvToRgb(audio.hue + centroid * 240, 1, 0.08 + 0.92 * audio.level);
-}
+      /* ---------- built-in effects & raw ---------- */
+      $('fxSend').onclick = () => {
+        stopMode();
+        sendPayload(
+          cmdEffect(+$('fxNum').value, +$('speed').value, +$('bright').value),
+        );
+      };
+      $('fxPrev').onclick = () => {
+        $('fxNum').value = Math.max(1, +$('fxNum').value - 1);
+        $('fxSend').onclick();
+      };
+      $('fxNext').onclick = () => {
+        $('fxNum').value = +$('fxNum').value + 1;
+        $('fxSend').onclick();
+      };
+      $('rawSend').onclick = () => {
+        const bytes = $('raw')
+          .value.trim()
+          .split(/[\s,]+/)
+          .filter(Boolean)
+          .map((h) => parseInt(h, 16) & 0xff);
+        if (!bytes.length) return;
+        if ($('rawExact').checked) sendPayload({ raw: new Uint8Array(bytes) });
+        else sendPayload(withChecksum(bytes));
+      };
 
-/* ---------- sleep timer ---------- */
-let timerEnd = 0;
-$('timer').onchange = () => {
-  const m = +$('timer').value;
-  timerEnd = m ? Date.now() + m * 60000 : 0;
-  log(m ? `Sleep timer: ${m} min (fades out the last minute)` : 'Sleep timer off');
-};
-setInterval(() => {
-  if (!timerEnd) { $('timerV').textContent = ''; return; }
-  const left = timerEnd - Date.now();
-  if (left <= 0) {
-    timerEnd = 0; $('timer').value = '0'; stopMode(); sendPayload(cmdPower(false)); showOrb([0, 0, 0]); log('Sleep timer: lights off');
-    return;
-  }
-  $('timerV').textContent = `${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')} left`;
-  if (left < 60000) { $('bright').value = Math.max(1, Math.round(left / 600)); $('brightV').textContent = $('bright').value; if (!current) { lastFrame = null; setRgb(hexToRgb($('color').value)); } }
-}, 1000);
-
-/* ---------- built-in effects & raw ---------- */
-$('fxSend').onclick = () => { stopMode(); sendPayload(cmdEffect(+$('fxNum').value, +$('speed').value, +$('bright').value)); };
-$('fxPrev').onclick = () => { $('fxNum').value = Math.max(1, +$('fxNum').value - 1); $('fxSend').onclick(); };
-$('fxNext').onclick = () => { $('fxNum').value = +$('fxNum').value + 1; $('fxSend').onclick(); };
-$('rawSend').onclick = () => {
-  const bytes = $('raw').value.trim().split(/[\s,]+/).filter(Boolean).map(h => parseInt(h, 16) & 0xff);
-  if (!bytes.length) return;
-  if ($('rawExact').checked) sendPayload({ raw: new Uint8Array(bytes) });
-  else sendPayload(withChecksum(bytes));
-};
-
-if (!navigator.bluetooth) $('nobt').style.display = 'block';
-log('Ready. Tap Connect. Tip: the strip accepts only ONE connection — close the ZENGGE app first.');
-</script>
-</body>
+      if (!navigator.bluetooth) {
+        const ios =
+          /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        if (ios)
+          $('nobt').innerHTML =
+            '<b>iPhone/iPad detected.</b> Apple blocks Bluetooth in Safari, Chrome and home-screen apps on iOS. ' +
+            'Install the free <b>Bluefy – Web BLE Browser</b> from the App Store and open this page in it.';
+        else if (!window.isSecureContext)
+          $('nobt').innerHTML =
+            'Open this page over <b>https://</b> — Bluetooth is blocked on plain http.';
+        $('nobt').style.display = 'block';
+      }
+      log(
+        'Ready. Tap Connect. Tip: the strip accepts only ONE connection — close the ZENGGE app first.',
+      );
+    </script>
+  </body>
 </html>
