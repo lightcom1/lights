@@ -9,6 +9,7 @@ enum Activity: Equatable {
     case pixel(String)       // per-LED effect (streamed)
     case style(Int)          // controller's foreground/background effect (runs on the strip)
     case stripEffect(Int)    // controller's built-in effect 1–99 (runs on the strip)
+    case pattern(String)     // our pattern, scrolled by the controller (runs on the strip)
 }
 
 struct Favorite: Codable, Identifiable, Equatable {
@@ -29,6 +30,8 @@ final class Engine: ObservableObject {
     @Published var params = EffectParams()
     @Published var ledCount = 216
     @Published var fps = 0
+    @Published var streamFPS = 15.0             // steady target frame rate for streamed pixel effects
+    @Published var reverse = false              // scroll direction for on-strip patterns
     @Published var favorites: [Favorite] = [] { didSet { saveFavorites() } }
 
     private var timer: Timer?
@@ -36,6 +39,7 @@ final class Engine: ObservableObject {
     private var lastTick = Date()
     private var lastSentColor: [UInt8] = []
     private var lastModeSend = Date.distantPast
+    private var nextFrameAt = Date.distantPast
     private var fpsCount = 0
     private var fpsStamp = Date()
     private var activityToken: NSObjectProtocol?
@@ -92,9 +96,17 @@ final class Engine: ObservableObject {
         switch activity {
         case .style(let id): playStyle(id)
         case .stripEffect(let id): playStripEffect(id)
+        case .pattern(let id): playPattern(id)
         case .color: sendColor(color, force: false)
         default: break
         }
+    }
+
+    func playPattern(_ id: String) {
+        guard let pat = stripPatterns.first(where: { $0.id == id }) else { return }
+        activity = .pattern(id)
+        strip.send(StripProtocol.pixels(pat.build(ledCount, params), brightness: bright01,
+                                        mode: 2, speed: UInt8(clamp(runSpeed, 1, 100)), direction: reverse ? 1 : 0))
     }
 
     func pixelTest() {
@@ -125,6 +137,7 @@ final class Engine: ObservableObject {
         lastSentColor = []
         fpsCount = 0
         fpsStamp = Date()
+        nextFrameAt = Date()
     }
 
     private func tick() {
@@ -142,8 +155,13 @@ final class Engine: ObservableObject {
             }
         case .pixel(let id):
             guard let fx = pixelEffects.first(where: { $0.id == id }) else { return }
-            t += dt * Self.speedFactor(runSpeed)
-            if !strip.isBusy {
+            // Steady pacing: frames go out on a fixed schedule and the animation advances by the
+            // same step every frame, so motion stays even. (Sending "as fast as possible" gives
+            // irregular gaps that look laggy even at a higher average fps.)
+            let interval = 1 / streamFPS
+            if now >= nextFrameAt && !strip.isBusy {
+                nextFrameAt = max(nextFrameAt.addingTimeInterval(interval), now.addingTimeInterval(-interval))
+                t += interval * Self.speedFactor(runSpeed)
                 strip.stream(StripProtocol.pixels(fx.fn(t, ledCount, params), brightness: bright01))
                 fpsCount += 1
             }

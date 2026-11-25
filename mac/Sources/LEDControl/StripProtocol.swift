@@ -40,14 +40,15 @@ enum StripProtocol {
     }
 
     /// Per-LED frame (command 0x59, "format B").
-    ///     59 LEN_HI LEN_LO  [R G B] × N  00 1E MODE SPEED 00  checksum
-    /// mode 1 = static (we stream frames), 2 = controller scrolls the pattern.
-    static func pixels(_ frame: [RGB], brightness: Double, mode: UInt8 = 1, speed: UInt8 = 50) -> [UInt8] {
+    ///     59 LEN_HI LEN_LO  [R G B] × N  00 1E MODE SPEED DIR  checksum
+    /// mode 1 = static (we stream frames), 2 = controller scrolls the pattern itself.
+    /// DIR (0/1) is the scroll direction (seen on LEDnetWF ring lights; unconfirmed on strips).
+    static func pixels(_ frame: [RGB], brightness: Double, mode: UInt8 = 1, speed: UInt8 = 50, direction: UInt8 = 0) -> [UInt8] {
         var rgb: [UInt8] = []
         rgb.reserveCapacity(frame.count * 3)
         for c in frame { rgb += c.bytes(scaledBy: brightness) }
         let len = rgb.count + 9
-        return withChecksum([0x59, UInt8((len >> 8) & 0xff), UInt8(len & 0xff)] + rgb + [0x00, 0x1e, mode, speed, 0x00])
+        return withChecksum([0x59, UInt8((len >> 8) & 0xff), UInt8(len & 0xff)] + rgb + [0x00, 0x1e, mode, speed, direction])
     }
 }
 

@@ -97,6 +97,7 @@ struct ContentView: View {
                 header
                 modesCard
                 runningCard
+                patternsCard
                 pixelCard
                 HStack(alignment: .top, spacing: 14) {
                     colorCard
@@ -192,10 +193,39 @@ struct ContentView: View {
         }
     }
 
+    // MARK: Patterns (scrolled by the controller)
+
+    private var patternsCard: some View {
+        Card(title: "Patterns", subtitle: "your design, animated by the strip itself — smooth, keeps going with the app closed") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
+                ForEach(stripPatterns) { pat in
+                    Tile(title: pat.name, subtitle: pat.desc, active: engine.activity == .pattern(pat.id),
+                         preview: { now, n in
+                             let frame = pat.build(engine.ledCount, engine.params)
+                             let shift = Int(now * (5 + engine.runSpeed * 0.6)) * (engine.reverse ? -1 : 1)
+                             let c = frame.count
+                             return (0..<n).map { i in frame[(((i * c / n) - shift) % c + c) % c] }
+                         }) { engine.playPattern(pat.id) }
+                }
+            }
+            HStack(spacing: 14) {
+                Stepper("Group size: \(engine.params.groupSize)", value: $engine.params.groupSize, in: 1...50)
+                    .onChange(of: engine.params.groupSize) { _ in engine.refresh() }
+                Stepper("Groups: \(engine.params.waves)", value: $engine.params.waves, in: 1...6)
+                    .onChange(of: engine.params.waves) { _ in engine.refresh() }
+                Toggle("Reverse direction", isOn: $engine.reverse)
+                    .onChange(of: engine.reverse) { _ in engine.refresh() }
+                Spacer()
+            }
+            Text("Uses the Background / Runner colors and Speed from Running lights.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: Pixel effects (streamed)
 
     private var pixelCard: some View {
-        Card(title: "Pixel effects", subtitle: "drawn LED by LED and streamed — keep the app open") {
+        Card(title: "Pixel effects", subtitle: "drawn LED by LED and streamed over Bluetooth — for what patterns can't do (mirrored, random)") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
                 ForEach(pixelEffects) { fx in
                     Tile(title: fx.name, subtitle: fx.desc, active: engine.activity == .pixel(fx.id),
@@ -206,8 +236,8 @@ struct ContentView: View {
                 }
             }
             HStack(spacing: 14) {
-                Stepper("Group size: \(engine.params.groupSize)", value: $engine.params.groupSize, in: 1...50)
-                Stepper("Waves: \(engine.params.waves)", value: $engine.params.waves, in: 1...6)
+                Stepper("Frame rate: \(Int(engine.streamFPS))", value: $engine.streamFPS, in: 6...30, step: 1)
+                    .help("Steady rate beats a high but uneven one. Lower it if motion stutters.")
                 Stepper("LEDs: \(engine.ledCount)", value: $engine.ledCount, in: 1...600)
                 Spacer()
                 if case .pixel = engine.activity {
@@ -216,7 +246,7 @@ struct ContentView: View {
                 Button("Test pattern") { engine.pixelTest() }
                     .help("Whole strip red · green · blue in thirds")
             }
-            Text("Uses the Background / Runner colors and Speed from Running lights.")
+            Text("Uses the colors, Speed, Group size and Groups from above.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }

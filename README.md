@@ -1,21 +1,13 @@
-# LED control: ZENGGE / LEDnetWF LED strip controller
+# LED control: ZENGGE LED strip controller
 
-Device: `08:65:F0:92:BF:DD`
+A controller for a ZENGGE / LEDnetWF addressable LED strip: controller model A3, 216 WS2812B LEDs.
 
-## Browser app (`index.html`)
+## Mac app (`mac/`)
 
-This works in Chrome or Edge on Android, Windows, macOS and Linux. On iPhone, use the Bluefy browser.
-Web Bluetooth needs `https://` or `localhost`:
-
-- **Easiest:** turn on GitHub Pages for this repo (Settings → Pages → deploy from branch), then open the page on your phone.
-- **On a computer:** `python3 -m http.server 8000`, then open http://localhost:8000
+A native macOS app (SwiftUI and CoreBluetooth). It has custom modes, running lights, patterns that run on the strip itself, and pixel effects streamed LED by LED.
+See [mac/README.md](mac/README.md) to build it.
 
 **Close the ZENGGE app first.** The strip accepts only one Bluetooth connection at a time.
-
-Features: power, color picker and swatches, brightness, 24 smooth custom modes with live previews (Rainbow, Breathe, Fireplace, Candle, Twilight, Cotton candy, Galaxy, Fireflies…
-and more), the controller's built-in effects, and a raw hex console.
-
-The browser renders the custom modes and streams them to the strip at about 20 fps, so keep the page open while a mode runs.
 
 ## Python CLI (`zengge.py`)
 
@@ -26,9 +18,17 @@ python zengge.py color ff3c00
 python zengge.py mode fire
 ```
 
-If colors don't respond, try the **Legacy** protocol in the app (Advanced) or pass `--legacy` to the script.
+## Protocol notes
 
-## Mac app (`mac/`)
+These are reverse-engineered and confirmed on this strip.
 
-A native macOS version with the same features. It streams pixel effects much faster than the browser can, and it keeps running in the background.
-To build it, run `mac/build.sh`. See [mac/README.md](mac/README.md).
+- **Bluetooth:** service `FFFF`. Commands are written to `FF01`, and replies arrive as notifications on `FF02`.
+- **Wrapper:** each command is wrapped as `00 SEQ 80 00 LEN_HI LEN_LO LEN+1 0B <payload+checksum>`.
+- **Long commands:** split into fragments. The first fragment is `40 SEQ [80 if last] 00 TOT_HI TOT_LO N+1 0B data`, and each follow-up is `40 SEQ [80 if last] IDX N data`.
+- **Write size:** each write must fit the link's write size (197 bytes on a Mac). Larger writes stall the controller.
+- **Commands:**
+  - `3B 23` / `3B 24`: power on / off.
+  - `3B A1 H/2 S V …`: whole-strip color.
+  - `42 ID SPEED BRIGHT`: built-in effect 1–99.
+  - `41 ID FG BG SPEED 00 00 F0`: foreground/background effect 2–10.
+  - `59 LEN_HI LEN_LO [RGB × N] 00 1E MODE SPEED 00`: per-LED colors. MODE 1 is static. MODE 2 makes the controller scroll the pattern itself.

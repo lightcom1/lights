@@ -22,7 +22,11 @@ The first time it starts, macOS asks for **Bluetooth** permission. Click **Allow
 
 1. **Close the ZENGGE app.** The strip accepts only one connection at a time.
 2. Click **Connect…** and pick your strip, marked **LED strip** in the list. Next time, the app reconnects automatically.
-3. Everything from the web app is here: custom modes, running lights styles, your favorites, the 1–99 effect browser, and pixel effects with an fps readout.
+3. Pick what to play:
+   - **Custom modes:** the whole strip changes color together.
+   - **Running lights / My effects / 1–99 browser:** the controller's own effects.
+   - **Patterns:** your own per-LED design (runners, comets, chases, rainbows). It's sent once and the strip scrolls it itself, so it's perfectly smooth and keeps going with the app closed.
+   - **Pixel effects:** drawn frame by frame and streamed. Use these for things the strip can't scroll itself, like the mirrored center burst or fire. Each frame is about 650 bytes over Bluetooth, so they top out around 15–20 fps. A steady **Frame rate** (default 15) looks smoother than a higher but uneven one.
 
 ## Troubleshooting
 

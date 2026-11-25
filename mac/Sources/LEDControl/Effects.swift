@@ -114,13 +114,18 @@ private func centerBurst(_ t: Double, _ n: Int, _ p: EffectParams) -> [RGB] {
     for w in 0..<waves {
         var head = (t * 40 + Double(w) * cycleLen / Double(waves)).truncatingRemainder(dividingBy: cycleLen)
         if head < 0 { head += cycleLen }
-        for k in 0..<L {
-            let d = Int(floor(head - Double(k)))
-            if d < 0 || Double(d) >= half { continue }
-            let c = p.bg.mixed(with: p.fg, 1 - Double(k) / Double(L) * 0.7) // bright front, soft tail
+        // Anti-aliased: the group spans the continuous range [head-L, head] (distance from center).
+        // Each LED is lit by how much of it the group covers, so motion between whole LEDs looks smooth.
+        let lo = max(0, Int(floor(head - Double(L)))), hi = min(Int(ceil(half)) - 1, Int(ceil(head)))
+        if lo > hi { continue }
+        for d in lo...hi {
+            let cover = min(Double(d + 1), head) - max(Double(d), head - Double(L))
+            if cover <= 0 { continue }
+            let pos = (head - (Double(d) + 0.5)) / Double(L)                 // 0 = front … 1 = tail
+            let lit = p.bg.mixed(with: p.fg, clamp(1 - pos * 0.7, 0, 1))      // bright front, soft tail
             let right = Int(floor(half)) + d, left = Int(ceil(half - 1)) - d
-            if right < n { f[right] = c }
-            if left >= 0 { f[left] = c }
+            if right < n { f[right] = f[right].mixed(with: lit, min(1, cover)) }
+            if left >= 0 { f[left] = f[left].mixed(with: lit, min(1, cover)) }
         }
     }
     return f
@@ -135,8 +140,10 @@ let pixelEffects: [PixelEffect] = [
         let L = Double(max(2, min(100, p.groupSize * 2)))
         let head = (t * 45).truncatingRemainder(dividingBy: Double(n) + L)
         return (0..<n).map { i in
-            let d = head - Double(i)
-            return d >= 0 && d < L ? p.bg.mixed(with: p.fg, pow(1 - d / L, 1.5)) : p.bg
+            let d = head - (Double(i) + 0.5)               // distance behind the (sub-LED) head
+            if d < -0.5 || d >= L { return p.bg }
+            let edge = d < 0.5 ? d + 0.5 : 1               // partial front LED for smooth motion
+            return p.bg.mixed(with: p.fg, pow(1 - max(0, d) / L, 1.5) * edge)
         }
     },
     PixelEffect(id: "rainbowBurst", name: "Rainbow from center", desc: "rainbow rings flowing outward") { t, n, _ in
@@ -163,5 +170,78 @@ let pixelEffects: [PixelEffect] = [
             let w = (sin(x * 0.09 - t * 2.2) + sin(x * 0.031 + t * 1.3) * 0.6 + 1.6) / 3.2
             return .hsv(195 + 30 * w, 0.95, 0.15 + 0.85 * pow(w, 1.5))
         }
+    },
+]
+
+// MARK: - Patterns that run on the strip
+
+/// A per-LED pattern sent once with "running" mode; the controller scrolls it itself,
+/// so it's perfectly smooth and keeps going with the app closed. Index 0 = start of strip.
+struct StripPattern: Identifiable {
+    let id: String
+    let name: String
+    let desc: String
+    let build: (Int, EffectParams) -> [RGB]
+}
+
+/// `count` evenly spaced groups of `size` LEDs with a bright head and fading tail.
+private func runners(_ n: Int, _ p: EffectParams, size: Int, count: Int, colors: (Int) -> RGB, tailPower: Double = 1) -> [RGB] {
+    var f = [RGB](repeating: p.bg, count: n)
+    guard n > 0 else { return f }
+    for g in 0..<count {
+        let head = (g * n / count + size - 1) % n
+        for k in 0..<size {
+            let fade = pow(1 - Double(k) / Double(size), tailPower) // 1 at the head
+            f[((head - k) % n + n) % n] = p.bg.mixed(with: colors(g), clamp(0.15 + 0.85 * fade, 0, 1))
+        }
+    }
+    return f
+}
+
+let stripPatterns: [StripPattern] = [
+    StripPattern(id: "runners", name: "Runners", desc: "groups chase on the background") { n, p in
+        runners(n, p, size: p.groupSize, count: p.waves, colors: { _ in p.fg })
+    },
+    StripPattern(id: "comet", name: "Comet", desc: "long fading tail") { n, p in
+        runners(n, p, size: max(3, p.groupSize * 3), count: 1, colors: { _ in p.fg }, tailPower: 2)
+    },
+    StripPattern(id: "comets", name: "Comet rain", desc: "several comets") { n, p in
+        runners(n, p, size: max(3, p.groupSize * 2), count: max(2, p.waves * 2), colors: { _ in p.fg }, tailPower: 2)
+    },
+    StripPattern(id: "rainbowRunners", name: "Rainbow runners", desc: "each group its own hue") { n, p in
+        let c = max(3, p.waves * 3)
+        return runners(n, p, size: p.groupSize, count: c, colors: { g in .hsv(Double(g) * 360 / Double(c), 1, 1) })
+    },
+    StripPattern(id: "chase", name: "Two-color chase", desc: "runner / background blocks") { n, p in
+        (0..<n).map { i in (i / max(1, p.groupSize)) % 2 == 0 ? p.fg : p.bg }
+    },
+    StripPattern(id: "softChase", name: "Soft chase", desc: "blocks blending into each other") { n, p in
+        let period = Double(max(2, p.groupSize * 2))
+        return (0..<n).map { i in p.bg.mixed(with: p.fg, swell(Double(i), period)) }
+    },
+    StripPattern(id: "rainbow", name: "Rainbow", desc: "full spectrum flowing") { n, _ in
+        (0..<n).map { i in .hsv(Double(i) * 360 / Double(n), 1, 1) }
+    },
+    StripPattern(id: "rainbow2", name: "Double rainbow", desc: "two spectra, tighter") { n, _ in
+        (0..<n).map { i in .hsv(Double(i) * 720 / Double(n), 1, 1) }
+    },
+    StripPattern(id: "waves", name: "Color waves", desc: "runner ↔ background gradient") { n, p in
+        let period = Double(n) / Double(max(1, p.waves))
+        return (0..<n).map { i in p.bg.mixed(with: p.fg, ease(swell(Double(i), period))) }
+    },
+    StripPattern(id: "ocean", name: "Ocean", desc: "deep blue swells") { n, _ in
+        (0..<n).map { i in
+            let x = Double(i), w = (sin(x * 0.09) + sin(x * 0.031) * 0.6 + 1.6) / 3.2
+            return .hsv(195 + 30 * w, 0.95, 0.15 + 0.85 * pow(w, 1.5))
+        }
+    },
+    StripPattern(id: "lava", name: "Lava", desc: "red & orange blobs") { n, _ in
+        (0..<n).map { i in
+            let v = (sin(Double(i) * 0.11) + sin(Double(i) * 0.043 + 1) + 2) / 4
+            return .hsv(355 + 30 * v, 1, 0.3 + 0.7 * v)
+        }
+    },
+    StripPattern(id: "police", name: "Red & blue", desc: "half red, half blue") { n, _ in
+        (0..<n).map { i in i < n / 2 ? RGB(255, 0, 0) : RGB(0, 40, 255) }
     },
 ]
