@@ -47,8 +47,10 @@
   .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
   .swatches button { aspect-ratio: 1; padding: 0; border-radius: 8px; }
   .modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
-  .modes button { text-align: left; padding: 10px; }
+  .modes button { text-align: left; padding: 10px; display: flex; flex-direction: column; }
   .modes button span { display: block; font-size: 11px; color: var(--muted); }
+  .modes canvas.pv { display: block; width: 100%; height: 8px; margin-top: auto; border-radius: 4px; background: #000; }
+  .modes button span { margin-bottom: 8px; }
   #log {
     height: 140px; overflow: auto; background: #0a0c10; border-radius: 8px; padding: 8px;
     font: 12px/1.4 ui-monospace, Menlo, monospace; color: #9fb0c8; white-space: pre-wrap; word-break: break-all;
@@ -329,6 +331,14 @@ const noise = (() => { // smooth 1D value noise
   return x => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return lerp(p[i & 255], p[(i + 1) & 255], u); };
 })();
 const base = () => hexToRgb($('modeColor').value);
+const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const ease = x => (1 - Math.cos(Math.PI * x)) / 2;
+// loop smoothly through color stops; `secs` = seconds per stop
+function cycle(stops, t, secs) {
+  const x = ((t / secs) % stops.length + stops.length) % stops.length, i = Math.floor(x);
+  return mix(stops[i], stops[(i + 1) % stops.length], ease(x - i));
+}
+const swell = (t, period) => (1 - Math.cos(2 * Math.PI * t / period)) / 2; // 0..1 soft wave
 
 const MODES = {
   rainbow:   { name: 'Rainbow', desc: 'smooth hue cycle', fn: t => hsvToRgb(t * 40, 1, 1) },
@@ -346,15 +356,31 @@ const MODES = {
                  const w = (Math.sin(t * 0.9) + Math.sin(t * 1.7 + 1) * 0.5 + 1.5) / 3;
                  return hsvToRgb(185 + 35 * w, 0.9, 0.35 + 0.65 * w); } },
   lava:      { name: 'Lava lamp', desc: 'red ↔ purple blobs', fn: t => hsvToRgb(330 + 50 * noise(t * 0.5), 1, 0.5 + 0.5 * noise(t * 0.7 + 30)) },
-  storm:     { name: 'Thunderstorm', desc: 'random lightning', fn: (t, s) => {
-                 if (!s.next || t > s.next) { s.flash = t; s.next = t + 1.5 + Math.random() * 6; s.double = Math.random() < 0.5; }
-                 const dt = t - s.flash;
-                 const f = Math.exp(-dt * 12) + (s.double ? Math.exp(-Math.max(0, dt - 0.18) * 14) * (dt > 0.18) : 0);
+  storm:     { name: 'Thunderstorm', desc: 'distant lightning', fn: t => {
+                 const k = Math.floor(t / 4), at = k * 4 + hash(k) * 3, dt = t - at;
+                 const f = dt < 0 ? 0 : Math.exp(-dt * 12) + (hash(k + 99) < 0.5 && dt > 0.18 ? Math.exp(-(dt - 0.18) * 14) : 0);
                  return mix([5, 10, 40], [230, 235, 255], clamp(f, 0, 1)); } },
   heartbeat: { name: 'Heartbeat', desc: 'lub-dub pulse', fn: t => {
                  const p = (t * 0.9) % 1;
                  const k = Math.exp(-Math.pow((p - 0.1) / 0.04, 2)) + 0.7 * Math.exp(-Math.pow((p - 0.3) / 0.05, 2));
                  return scale(base(), 0.04 + 0.96 * k); } },
+  twilight:  { name: 'Twilight', desc: 'blue hour drift', fn: t => hsvToRgb(235 + 45 * swell(t, 14), 0.9, 0.45 + 0.35 * swell(t + 3, 9)) },
+  cotton:    { name: 'Cotton candy', desc: 'pink ↔ baby blue', fn: t => cycle([[255, 110, 190], [140, 170, 255], [200, 120, 255]], t, 4) },
+  forest:    { name: 'Forest', desc: 'sunlight through leaves', fn: t => hsvToRgb(85 + 60 * noise(t * 0.4), 0.85, 0.45 + 0.5 * noise(t * 0.6 + 40)) },
+  sakura:    { name: 'Sakura', desc: 'cherry blossom pinks', fn: t => cycle([[255, 150, 190], [255, 200, 215], [235, 90, 150], [255, 175, 200]], t, 3.5) },
+  neon:      { name: 'Neon dream', desc: 'cyan ↔ magenta', fn: t => hsvToRgb(180 + 125 * swell(t, 8), 1, 1) },
+  tropical:  { name: 'Tropical', desc: 'lagoon → coral → mango', fn: t => cycle([[0, 210, 190], [255, 110, 90], [255, 190, 40], [0, 160, 255]], t, 3.5) },
+  galaxy:    { name: 'Galaxy', desc: 'deep space nebula', fn: t => hsvToRgb(250 + 70 * noise(t * 0.3), 0.9, 0.25 + 0.55 * noise(t * 0.45 + 70)) },
+  peach:     { name: 'Peach', desc: 'soft sorbet glow', fn: t => cycle([[255, 130, 80], [255, 170, 120], [255, 105, 95]], t, 4) },
+  mint:      { name: 'Mint breeze', desc: 'fresh green ↔ sky', fn: t => cycle([[60, 255, 170], [40, 200, 255], [120, 255, 220]], t, 4) },
+  fireflies: { name: 'Fireflies', desc: 'warm glows at dusk', fn: t => {
+                 const g = Math.max(swell(t, 5.3), swell(t + 2.1, 7.7) * 0.8, swell(t + 4, 11) * 0.6);
+                 return mix([0, 20, 12], [200, 255, 60], Math.pow(g, 3)); } },
+  pastel:    { name: 'Pastel rainbow', desc: 'gentle hue cycle', fn: t => hsvToRgb(t * 25, 0.45, 1) },
+  huebreath: { name: 'Color breathe', desc: 'breathes, new hue each breath', fn: t => {
+                 const period = 4.5; return hsvToRgb(Math.floor(t / period) * 67 + t * 4, 1, 0.05 + 0.95 * Math.pow(swell(t, period), 1.6)); } },
+  autumn:    { name: 'Autumn', desc: 'amber, rust & gold', fn: t => cycle([[255, 120, 0], [190, 40, 10], [255, 190, 30], [230, 80, 20]], t, 3.5) },
+  arctic:    { name: 'Arctic', desc: 'icy whites & blues', fn: t => cycle([[200, 235, 255], [80, 170, 255], [230, 250, 255], [40, 120, 255]], t, 4) },
   sunset:    { name: 'Sunset', desc: 'gold → pink → indigo', fn: t => {
                  const stops = [[255, 170, 40], [255, 80, 60], [200, 40, 120], [60, 20, 140], [255, 170, 40]];
                  const x = (t * 0.08) % 1 * (stops.length - 1), i = Math.floor(x);
@@ -405,10 +431,29 @@ function stopMode(clear = true) {
 
 Object.entries(MODES).forEach(([k, m]) => {
   const b = document.createElement('button'); b.dataset.k = k;
-  b.innerHTML = `${m.name}<span>${m.desc}</span>`;
+  b.innerHTML = `${m.name}<span>${m.desc}</span><canvas class="pv" height="8"></canvas>`;
   b.onclick = () => current === k ? stopMode() : startMode(k);
   $('modes').appendChild(b);
 });
+
+/* ---------- live previews: each mode's line shows the next few seconds, scrolling ---------- */
+const PREVIEW_WINDOW = 8; // seconds shown across the line
+function drawPreviews(now) {
+  const spd = Math.pow(4, (+$('speed').value - 50) / 50), T = now / 1000 * spd;
+  document.querySelectorAll('.modes button').forEach(b => {
+    const cv = b.querySelector('canvas'), w = cv.clientWidth;
+    if (!w) return;
+    if (cv.width !== w) cv.width = w;
+    const ctx = cv.getContext('2d'), img = ctx.createImageData(w, 1), fn = MODES[b.dataset.k].fn;
+    for (let x = 0; x < w; x++) {
+      const [r, g, bl] = fn(T + x / w * PREVIEW_WINDOW * spd, {});
+      img.data.set([r, g, bl, 255], x * 4);
+    }
+    for (let y = 0; y < cv.height; y++) ctx.putImageData(img, 0, y);
+  });
+  requestAnimationFrame(drawPreviews);
+}
+requestAnimationFrame(drawPreviews);
 
 /* Chrome freezes requestAnimationFrame and throttles timers in hidden/covered tabs,
  * but timers inside a Web Worker keep firing — so the effect clock lives in a worker. */

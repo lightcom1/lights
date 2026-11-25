@@ -12,9 +12,8 @@ Web Bluetooth needs `https://` or `localhost`:
 
 **Close the ZENGGE app first.** The strip accepts only one Bluetooth connection at a time.
 
-Features: power, color picker and swatches, brightness, 10 custom modes (Rainbow, Breathe, Fireplace, Candle,
-Aurora, Ocean, Lava lamp, Thunderstorm, Heartbeat,
-Sunset), the controller's built-in effects, and a raw hex console.
+Features: power, color picker and swatches, brightness, 24 smooth custom modes with live previews (Rainbow, Breathe, Fireplace, Candle, Twilight, Cotton candy, Galaxy, Fireflies…
+and more), the controller's built-in effects, and a raw hex console.
 
 The browser renders the custom modes and streams them to the strip at about 20 fps, so keep the page open while a mode runs.
 
