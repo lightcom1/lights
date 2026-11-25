@@ -198,6 +198,14 @@
         font-size: 12px;
         text-decoration: underline;
       }
+      canvas.runpv {
+        display: block;
+        width: 100%;
+        height: 14px;
+        border-radius: 6px;
+        background: #000;
+        margin-bottom: 6px;
+      }
       #log {
         height: 140px;
         overflow: auto;
@@ -293,6 +301,44 @@
             >
           </h2>
           <div class="modes" id="modes"></div>
+        </section>
+        <section class="full">
+          <h2>
+            Running lights
+            <span class="note" style="text-transform: none; letter-spacing: 0"
+              >— runs on the strip itself (WS2812B), keeps going with the page closed</span
+            >
+          </h2>
+          <canvas id="runPreview" class="runpv" height="14"></canvas>
+          <div class="row">
+            <label>Background</label
+            ><input type="color" id="runBase" value="#1a0040" />
+            <label style="min-width: 0">Runner</label
+            ><input type="color" id="runDot" value="#00e5ff" />
+            <label style="min-width: 0">Runners</label
+            ><select id="runCount">
+              <option>1</option><option selected>2</option><option>3</option><option>4</option><option>6</option>
+            </select>
+            <label style="min-width: 0">Size (LEDs)</label
+            ><select id="runSize">
+              <option>3</option><option selected>4</option><option>5</option><option>6</option><option>8</option><option>10</option><option>12</option>
+            </select>
+            <label style="min-width: 0">Tail</label><input type="checkbox" id="runTail" checked />
+          </div>
+          <div class="row">
+            <label>Effect</label
+            ><select id="runFx">
+              <option value="2" selected>Running</option>
+              <option value="1">Static</option>
+              <option value="5">Breathing</option>
+              <option value="4">Jump</option>
+            </select>
+            <label style="min-width: 0">Speed</label
+            ><input type="range" id="runSpeed" min="1" max="100" value="40" />
+            <label style="min-width: 0">LEDs</label
+            ><input type="number" id="runPoints" value="216" min="1" max="255" style="width: 70px" />
+            <button class="primary" id="runSend">Start running lights</button>
+          </div>
         </section>
         <section>
           <h2>Color</h2>
@@ -564,20 +610,21 @@
       }
 
       /* ---------- transport (drops stale frames so effects stay smooth) ---------- */
-      async function sendPayload(payload, { quiet = false } = {}) {
+      async function sendPayload(payload, { quiet = false, withResponse = false } = {}) {
         if (!writeChar) {
           if (!quiet) log('Not connected');
           return;
         }
-        pending = { payload, quiet };
+        pending = { payload, quiet, withResponse };
         if (busy) return;
         busy = true;
         while (pending) {
-          const { payload: p, quiet: q } = pending;
+          const { payload: p, quiet: q, withResponse: wr } = pending;
           pending = null;
           const pkt = p.raw ? p.raw : wrap(p);
           try {
             if (
+              !(wr || pkt.length > 180) &&
               writeChar.properties.writeWithoutResponse &&
               writeChar.writeValueWithoutResponse
             )
@@ -1121,6 +1168,76 @@
       clock.onmessage = () => {
         if (current && rafId) tick(performance.now());
       };
+
+      /* ============================================================
+       *  RUNNING LIGHTS — addressable (WS2812B) "multi-color zones" command.
+       *  The strip is split into zones of `size` LEDs; each zone gets a color,
+       *  and the controller itself animates the pattern (so it keeps running
+       *  with the page closed).
+       *    59 LEN_HI LEN_LO  [R G B] × zones  POINTS EFFECT SPEED  checksum
+       *  effect: 1 static, 2 running, 4 jump, 5 breathing
+       * ============================================================ */
+      function runPattern() {
+        const points = clamp(+$('runPoints').value || 216, 1, 255),
+          size = +$('runSize').value,
+          zones = Math.min(80, Math.ceil(points / size)), // keep the packet under BLE limits
+          runners = +$('runCount').value,
+          bg = hexToRgb($('runBase').value),
+          dot = hexToRgb($('runDot').value),
+          tail = $('runTail').checked;
+        const list = Array.from({ length: zones }, () => bg);
+        for (let i = 0; i < runners; i++) {
+          const at = Math.floor((i * zones) / runners);
+          list[at] = dot;
+          if (tail) {
+            list[(at - 1 + zones) % zones] = mix(bg, dot, 0.45);
+            list[(at - 2 + zones) % zones] = mix(bg, dot, 0.15);
+          }
+        }
+        return { points, size, zones, list };
+      }
+      function cmdZones(list, points, effect, speed) {
+        const n = list.length,
+          msg = [0x59, ((3 * n + 6) >> 8) & 0xff, (3 * n + 6) & 0xff];
+        list.forEach((c) => msg.push(...scale(c, masterBright())));
+        msg.push(points & 0xff, effect, clamp(speed, 1, 100));
+        return withChecksum(msg);
+      }
+      $('runSend').onclick = () => {
+        stopMode();
+        const { points, zones, size, list } = runPattern();
+        log(`Running lights: ${zones} zones × ${size} LEDs, effect ${$('runFx').value}`);
+        sendPayload(cmdZones(list, points, +$('runFx').value, +$('runSpeed').value), {
+          withResponse: true,
+        });
+      };
+      // preview: draw the zone pattern on 216 "LEDs" and scroll it like the controller will
+      function drawRunPreview(now) {
+        const cv = $('runPreview'),
+          w = cv.clientWidth;
+        if (w) {
+          if (cv.width !== w) cv.width = w;
+          const ctx = cv.getContext('2d'),
+            { points, size, zones, list } = runPattern(),
+            fx = +$('runFx').value,
+            spd = +$('runSpeed').value,
+            t = now / 1000;
+          const shift = fx === 2 ? Math.floor(t * (2 + spd * 0.4)) : 0;
+          const k = fx === 5 ? 0.15 + 0.85 * swell(t * (0.2 + spd / 60), 1) : 1;
+          const ledW = w / points;
+          ctx.clearRect(0, 0, w, cv.height);
+          for (let i = 0; i < points; i++) {
+            const z = Math.floor(i / size) % zones;
+            let c = list[(((z - Math.floor(shift / size)) % zones) + zones) % zones];
+            if (fx === 4) c = Math.floor(t * (0.5 + spd / 30)) % 2 ? list[0] : c;
+            c = scale(c, k);
+            ctx.fillStyle = `rgb(${c.join(',')})`;
+            ctx.fillRect(i * ledW + 0.5, 2, Math.max(1, ledW - 1), cv.height - 4);
+          }
+        }
+        requestAnimationFrame(drawRunPreview);
+      }
+      requestAnimationFrame(drawRunPreview);
 
       /* ---------- built-in effects & raw ---------- */
       $('fxSend').onclick = () => {
