@@ -63,6 +63,7 @@
     <div class="orb" id="orb"></div>
     <h1>Strip Studio<br><span class="status">Status: <b class="off" id="st">disconnected</b> <span id="devname"></span></span></h1>
     <button class="primary" id="connectBtn">Connect</button>
+    <button id="scanAllBtn" title="List every nearby Bluetooth device">Scan all</button>
     <button id="onBtn">On</button>
     <button id="offBtn">Off</button>
   </header>
@@ -241,11 +242,13 @@ function setRgb(rgb, quiet = true) {
 }
 
 /* ---------- connection ---------- */
-async function connect() {
+async function connect(all = false) {
   if (!navigator.bluetooth) { $('nobt').style.display = 'block'; return; }
   try {
     log('Scanning… pick your strip (usually named LEDnetWF…). Close the ZENGGE app first!');
-    try {
+    if (all) {
+      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
+    } else try {
       device = await navigator.bluetooth.requestDevice({
         filters: [...NAME_PREFIXES.map(namePrefix => ({ namePrefix })), { services: [SERVICE] }],
         optionalServices: [SERVICE],
@@ -256,6 +259,7 @@ async function connect() {
       device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
     }
     device.addEventListener('gattserverdisconnected', onDisconnect);
+    log('Selected: ' + (device.name || '(no name)') + ' id=' + device.id);
     await openGatt();
   } catch (e) { log('Connect error: ' + errText(e)); $('st').textContent = 'disconnected'; }
 }
@@ -291,6 +295,7 @@ $('connectBtn').onclick = () => {
   if (device && device.gatt.connected) { manualDisconnect = true; stopMode(); device.gatt.disconnect(); device = null; }
   else { manualDisconnect = false; connect(); }
 };
+$('scanAllBtn').onclick = () => { manualDisconnect = false; connect(true); };
 $('onBtn').onclick = () => sendPayload(cmdPower(true));
 $('offBtn').onclick = () => { stopMode(); sendPayload(cmdPower(false)); showOrb([0, 0, 0]); };
 
