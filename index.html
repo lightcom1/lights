@@ -190,6 +190,14 @@
         border-radius: 4px;
         background: #000;
       }
+      .linkbtn {
+        background: none;
+        border: none;
+        color: var(--muted);
+        padding: 4px;
+        font-size: 12px;
+        text-decoration: underline;
+      }
       #log {
         height: 140px;
         overflow: auto;
@@ -264,6 +272,7 @@
           >
         </h1>
         <button class="primary" id="connectBtn">Connect</button>
+        <button class="linkbtn" id="showAllBtn" title="Show every nearby Bluetooth device">Not listed?</button>
         <button id="onBtn">On</button>
         <button id="offBtn">Off</button>
       </header>
@@ -595,14 +604,24 @@
       }
 
       /* ---------- connection ---------- */
-      async function connect() {
+      const ZENGGE_FILTERS = [
+        { services: [SERVICE] },
+        ...['LEDnetWF', 'IOTWF', 'IOTB', 'Zengge', 'ZENGGE'].map((namePrefix) => ({
+          namePrefix,
+        })),
+        // LEDnetWF controllers advertise manufacturer IDs 0x5A00–0x5AFF
+        ...Array.from({ length: 256 }, (_, i) => ({
+          manufacturerData: [{ companyIdentifier: 0x5a00 + i }],
+        })),
+      ];
+      async function connect(showAll = false) {
         if (!navigator.bluetooth) {
           $('nobt').style.display = 'block';
           return;
         }
         try {
           // 1) Reconnect straight to a strip this browser already paired with (no picker)
-          if (navigator.bluetooth.getDevices) {
+          if (!showAll && navigator.bluetooth.getDevices) {
             for (const d of await navigator.bluetooth.getDevices()) {
               try {
                 device = d;
@@ -624,14 +643,26 @@
               }
             }
           }
-          // 2) Otherwise show every nearby device — the strip doesn't broadcast a name, so name filters miss it
-          log(
-            'Pick your strip from the list (it may show as "Unknown or unsupported device"). Close the ZENGGE app first!',
-          );
-          device = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: [SERVICE],
-          });
+          // 2) Picker showing only ZENGGE-looking devices (the strip broadcasts no name,
+          //    so match on its service ID and ZENGGE manufacturer IDs instead)
+          log('Pick your strip. Close the ZENGGE app first!');
+          if (showAll) {
+            device = await navigator.bluetooth.requestDevice({
+              acceptAllDevices: true,
+              optionalServices: [SERVICE],
+            });
+          } else {
+            try {
+              device = await navigator.bluetooth.requestDevice({
+                filters: ZENGGE_FILTERS,
+                optionalServices: [SERVICE],
+              });
+            } catch (e) {
+              if (e && e.name === 'NotFoundError') throw e; // user closed the picker
+              log('Filtered scan unsupported (' + errText(e) + ') — showing all devices');
+              return connect(true);
+            }
+          }
           device.addEventListener('gattserverdisconnected', onDisconnect);
           await openGatt();
         } catch (e) {
@@ -677,6 +708,10 @@
         }
       }
       let manualDisconnect = false;
+      $('showAllBtn').onclick = () => {
+        manualDisconnect = false;
+        connect(true);
+      };
       $('connectBtn').onclick = () => {
         if (device && device.gatt.connected) {
           manualDisconnect = true;
