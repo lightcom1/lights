@@ -206,6 +206,58 @@
       .styles button {
         min-width: 44px;
       }
+      h3.sub {
+        font-size: 13px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin: 18px 0 8px;
+      }
+      h3.sub .note {
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 12px;
+      }
+      .fxgrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 8px;
+      }
+      .fxgrid button {
+        text-align: left;
+        padding: 9px 10px;
+        position: relative;
+      }
+      .fxgrid button small {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .fxgrid button .x {
+        position: absolute;
+        top: 4px;
+        right: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .numgrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+        gap: 5px;
+        margin: 8px 0;
+      }
+      .numgrid button {
+        padding: 7px 0;
+        font-size: 13px;
+      }
+      details.browse {
+        margin-top: 14px;
+      }
+      details.browse summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 13px;
+      }
       #log {
         height: 140px;
         overflow: auto;
@@ -324,6 +376,24 @@
           <p class="note">
             Each style is one of the controller's foreground/background effects — tap through them to find the running one you like.
           </p>
+
+          <h3 class="sub">Scenes <span class="note">— named effects; uses the 7-color palette, may not work on every controller</span></h3>
+          <div class="fxgrid" id="scenes"></div>
+
+          <h3 class="sub">My effects <span class="note">— your saved favorites from the browser below</span></h3>
+          <div class="fxgrid" id="favs"><span class="note" id="favEmpty">Nothing saved yet — find one below and tap ★.</span></div>
+
+          <details class="browse">
+            <summary>Browse all 99 strip effects</summary>
+            <div class="row">
+              <span class="note">Tap a number to play it. Like it? Tap ★ to save it with a name (e.g. “Fire”, “Meteor”).</span>
+            </div>
+            <div class="numgrid" id="fxBrowse"></div>
+            <div class="row">
+              <span class="note">Playing: <b id="fxNow">—</b></span>
+              <button id="favSave">★ Save as favorite</button>
+            </div>
+          </details>
         </section>
         <section>
           <h2>Color</h2>
@@ -1185,7 +1255,7 @@
         b.textContent = id - 1;
         b.onclick = () => {
           runStyle = id;
-          document.querySelectorAll('#runStyles button').forEach((x) => x.classList.toggle('active', x === b));
+          markActive(b);
           log('Running lights style ' + (id - 1));
           sendRun();
         };
@@ -1193,6 +1263,107 @@
       }
       // re-send when colors/speed change, so tweaks apply live
       ['runBase', 'runDot', 'runSpeed'].forEach((id) => ($(id).onchange = sendRun));
+
+      /* ---------- Scenes (0x38, named by the ZENGGE app) ---------- */
+      const SCENES = [
+        [7, 'Middle → both ends', 'one dot bursts outward'],
+        [11, 'Fill from middle', 'colors grow outward'],
+        [35, 'Rainbow from middle', '7 colors grow outward'],
+        [8, 'Ends → middle', 'dots meet in the center'],
+        [12, 'Fill to middle', 'colors close inward'],
+        [13, 'Comet', 'fading runner'],
+        [25, 'Fading flow', 'soft trail runs along'],
+        [39, 'Rainbow comet', '7-color fading run'],
+        [15, 'Olive flow', 'smooth swelling waves'],
+        [41, 'Rainbow olive flow', '7-color swelling waves'],
+        [37, 'Rainbow flow', '7 colors flow gradually'],
+        [17, 'Runner on background', 'dot over a lit strip'],
+        [23, 'Two-color chase', 'alternating dots'],
+        [33, 'Rainbow overlay', 'colors stack along strip'],
+        [1, 'Gradual change', 'whole strip fades'],
+      ];
+      function playScene(id) {
+        stopMode();
+        sendPayload(withChecksum([0x38, id, clamp(+$('runSpeed').value, 1, 100), +$('bright').value]));
+      }
+      SCENES.forEach(([id, name, desc]) => {
+        const b = document.createElement('button');
+        b.innerHTML = `${name}<small>${desc}</small>`;
+        b.onclick = () => {
+          markActive(b);
+          log(`Scene ${id}: ${name}`);
+          playScene(id);
+        };
+        $('scenes').appendChild(b);
+      });
+      function markActive(btn) {
+        document
+          .querySelectorAll('#runStyles button, #scenes button, #favs button, #fxBrowse button')
+          .forEach((x) => x.classList.toggle('active', x === btn));
+      }
+
+      /* ---------- Built-in strip effects browser + favorites ---------- */
+      let fxPlaying = null;
+      function playStripFx(id) {
+        stopMode();
+        fxPlaying = id;
+        $('fxNow').textContent = 'Effect ' + id;
+        sendPayload(cmdEffect(id, +$('runSpeed').value, +$('bright').value));
+      }
+      for (let id = 1; id <= 99; id++) {
+        const b = document.createElement('button');
+        b.textContent = id;
+        b.onclick = () => {
+          markActive(b);
+          playStripFx(id);
+        };
+        $('fxBrowse').appendChild(b);
+      }
+      const FAV_KEY = 'led-favs';
+      function loadFavs() {
+        try {
+          return JSON.parse(localStorage.getItem(FAV_KEY)) || [];
+        } catch (e) {
+          return [];
+        }
+      }
+      function saveFavs(f) {
+        try {
+          localStorage.setItem(FAV_KEY, JSON.stringify(f));
+        } catch (e) {}
+      }
+      function renderFavs() {
+        const favs = loadFavs();
+        $('favs').querySelectorAll('button').forEach((b) => b.remove());
+        $('favEmpty').style.display = favs.length ? 'none' : '';
+        favs.forEach((f, i) => {
+          const b = document.createElement('button');
+          b.innerHTML = `${f.name}<small>effect ${f.id}</small><span class="x" title="Remove">✕</span>`;
+          b.onclick = (ev) => {
+            if (ev.target.classList.contains('x')) {
+              const all = loadFavs();
+              all.splice(i, 1);
+              saveFavs(all);
+              renderFavs();
+              return;
+            }
+            markActive(b);
+            log(`Favorite: ${f.name} (effect ${f.id})`);
+            playStripFx(f.id);
+          };
+          $('favs').appendChild(b);
+        });
+      }
+      $('favSave').onclick = () => {
+        if (!fxPlaying) return log('Play an effect first, then save it');
+        const name = prompt('Name this effect:', 'Effect ' + fxPlaying);
+        if (!name) return;
+        const favs = loadFavs().filter((f) => f.id !== fxPlaying);
+        favs.push({ id: fxPlaying, name: name.slice(0, 30) });
+        saveFavs(favs);
+        renderFavs();
+      };
+      renderFavs();
 
       /* ---------- built-in effects & raw ---------- */
       $('fxSend').onclick = () => {
