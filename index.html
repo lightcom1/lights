@@ -434,7 +434,7 @@ function startMode(key) {
   current = key; lastModeKey = key; state = {}; keepAwake(true); startTime = performance.now(); simTime = 0; lastTick = startTime;
   document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('active', b.dataset.k === key));
   log('Mode: ' + m.name);
-  const go = () => { rafId = requestAnimationFrame(tick); };
+  const go = () => { rafId = true; };
   if (m.setup) m.setup().then(go).catch(e => { log('Mode failed: ' + errText(e)); stopMode(); });
   else go();
 }
@@ -444,14 +444,12 @@ function tick(now) {
   const dt = (now - lastTick) / 1000; lastTick = now;
   const spd = m.realtime ? 1 : Math.pow(4, (+$('speed').value - 50) / 50); // 0.25x .. 4x
   simTime += dt * spd;
-  if (now - lastSend >= 1000 / FPS) {
+  if (now - lastSend >= 1000 / FPS - 10) {
     lastSend = now;
     setRgb(m.fn(simTime, state));
   }
-  rafId = requestAnimationFrame(tick);
 }
 function stopMode(clear = true) {
-  if (rafId) cancelAnimationFrame(rafId);
   rafId = null;
   if (current && MODES[current].teardown) MODES[current].teardown();
   current = null; lastFrame = null; keepAwake(false);
@@ -466,8 +464,11 @@ Object.entries(MODES).forEach(([k, m]) => {
   $('modes').appendChild(b);
 });
 
-/* Background tabs throttle requestAnimationFrame — keep effects running with a timer fallback */
-setInterval(() => { if (current && document.hidden) tick(performance.now()); }, 1000 / FPS);
+/* Chrome freezes requestAnimationFrame and throttles timers in hidden/covered tabs,
+ * but timers inside a Web Worker keep firing — so the effect clock lives in a worker. */
+const clock = new Worker(URL.createObjectURL(new Blob(
+  [`setInterval(() => postMessage(0), ${Math.round(1000 / FPS)});`], { type: 'text/javascript' })));
+clock.onmessage = () => { if (current && rafId) tick(performance.now()); };
 
 /* ---------- music mode (Web Audio) ---------- */
 let audio = null;
