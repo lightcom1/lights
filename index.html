@@ -55,6 +55,13 @@
   .note { font-size: 13px; color: var(--muted); }
   .warn { background: #3a2a12; border: 1px solid #6b4a17; color: #ffd28a; padding: 10px 12px; border-radius: 10px; font-size: 14px; margin-bottom: 14px; display: none; }
   .full { grid-column: 1 / -1; }
+  details.more { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  details.more summary { cursor: pointer; padding: 14px; color: var(--muted); font-size: 14px; list-style: none; user-select: none; }
+  details.more summary::-webkit-details-marker { display: none; }
+  details.more summary::before { content: '▸'; display: inline-block; width: 16px; transition: transform .15s; }
+  details.more[open] summary::before { transform: rotate(90deg); }
+  details.more .inner { padding: 0 14px 14px; }
+  details.more section { background: var(--panel2); }
 </style>
 </head>
 <body>
@@ -89,15 +96,16 @@
         <select id="timer"><option value="0">off</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select>
         <span class="note" id="timerV"></span>
       </div>
-      <div class="row"><button id="stopBtn">■ Stop mode</button><button id="saveBtn">💾 Save mode to strip</button></div>
-      <p class="note" id="saveNote">Saves the selected mode onto the controller as a color program, so it keeps running with the app closed. (Fireplace, Storm, Music etc. are live-only.) Experimental: works on most ZENGGE controllers.</p>
     </section>
 
     <section class="full">
-      <h2>Custom modes <span class="note" style="text-transform:none;letter-spacing:0">— rendered live in your browser and streamed to the strip</span></h2>
+      <h2>Custom modes <span class="note" style="text-transform:none;letter-spacing:0">— tap again to stop</span></h2>
       <div class="modes" id="modes"></div>
     </section>
 
+    <details class="full more">
+      <summary>More: built-in effects, advanced &amp; log</summary>
+      <div class="grid inner">
     <section>
       <h2>Built-in effects</h2>
       <div class="row"><label>Effect #</label><input type="number" id="fxNum" min="1" max="255" value="1" style="width:80px"><button id="fxPrev">◀</button><button id="fxNext">▶</button><button id="fxSend">Play</button></div>
@@ -121,6 +129,8 @@
       <h2>Log</h2>
       <div id="log"></div>
     </section>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -275,7 +285,7 @@ async function openGatt() {
     n.addEventListener('characteristicvaluechanged', ev => log('← ' + hex(new Uint8Array(ev.target.value.buffer))));
   } catch (e) { log('(no notify characteristic: ' + errText(e) + ')'); }
   $('st').textContent = 'connected'; $('st').className = 'on';
-  $('devname').textContent = '· ' + (device.name || device.id);
+  $('devname').textContent = device.name ? '· ' + device.name : '';
   $('connectBtn').textContent = 'Disconnect';
   log('Connected to ' + (device.name || device.id));
 }
@@ -283,7 +293,7 @@ async function onDisconnect() {
   writeChar = null;
   $('st').textContent = 'disconnected'; $('st').className = 'off';
   $('connectBtn').textContent = 'Connect';
-  log('Disconnected');
+  log('Disconnected'); $('devname').textContent = '';
   if (device && !manualDisconnect) {
     log('Reconnecting…');
     for (let i = 0; i < 5 && device && !writeChar; i++) {
@@ -377,44 +387,6 @@ const MODES = {
 };
 
 
-/* Programs that can be stored ON the controller (max 16 colors) — keep running with the app closed */
-const PROGRAMS = {
-  rainbow:   { trans: 'fade',   colors: () => [0, 45, 90, 135, 180, 225, 270, 315].map(h => hsvToRgb(h, 1, 1)) },
-  breathe:   { trans: 'fade',   colors: () => [base(), scale(base(), 0.05)] },
-  aurora:    { trans: 'fade',   colors: () => [[0, 255, 120], [0, 180, 160], [60, 0, 200], [0, 255, 60], [120, 0, 180], [0, 200, 200]] },
-  ocean:     { trans: 'fade',   colors: () => [[0, 160, 255], [0, 60, 160], [0, 220, 220], [0, 40, 120]] },
-  lava:      { trans: 'fade',   colors: () => [[255, 0, 60], [160, 0, 160], [255, 30, 0], [200, 0, 120]] },
-  sunset:    { trans: 'fade',   colors: () => [[255, 170, 40], [255, 80, 60], [200, 40, 120], [60, 20, 140]] },
-  candle:    { trans: 'fade',   colors: () => [[255, 120, 25], [200, 80, 10], [255, 140, 40], [180, 70, 10]] },
-  heartbeat: { trans: 'fade',   colors: () => [base(), scale(base(), 0.1), base(), scale(base(), 0.05), scale(base(), 0.05)] },
-  police:    { trans: 'jump',   colors: () => [[255, 0, 0], [0, 0, 0], [255, 0, 0], [0, 0, 0], [0, 30, 255], [0, 0, 0], [0, 30, 255], [0, 0, 0]] },
-  strobe:    { trans: 'strobe', colors: () => [base()] },
-  disco:     { trans: 'jump',   colors: () => Array.from({ length: 12 }, () => hsvToRgb(Math.random() * 360, 1, 1)) },
-  matrix:    { trans: 'fade',   colors: () => [[0, 255, 60], [0, 60, 15], [0, 120, 30], [0, 255, 60], [0, 40, 10]] },
-};
-function cmdCustomProgram(colors, speed, trans) {
-  const msg = [0x51];
-  const list = colors.slice(0, 16).map(c => scale(c, masterBright()));
-  for (let i = 0; i < 16; i++) {
-    const c = list[i];
-    if (c) msg.push(c[0], c[1], c[2], 0); else msg.push(1, 2, 3, 0); // 01 02 03 = unused slot
-  }
-  const delay = clamp(Math.round(31 - speed * 0.3), 1, 31);
-  msg.push(delay, { fade: 0x3a, jump: 0x3b, strobe: 0x3c }[trans], 0xff, 0x0f);
-  return withChecksum(msg);
-}
-let lastModeKey = null;
-$('saveBtn').onclick = () => {
-  if (!writeChar) { log('Connect to the strip first'); return; }
-  const key = current || lastModeKey;
-  if (!key) { log('Pick a mode first, then Save'); return; }
-  const prog = PROGRAMS[key];
-  if (!prog) { log(`"${MODES[key].name}" is live-only (reacts in real time) and can't be stored on the strip`); return; }
-  stopMode();
-  sendPayload(cmdCustomProgram(prog.colors(), +$('speed').value, prog.trans));
-  log(`Saved "${MODES[key].name}" to the strip — you can close the app now. If nothing changed, your controller doesn't support custom programs; use Built-in effects instead.`);
-};
-
 /* Keep the screen on while a live mode runs (iOS suspends apps in background) */
 let wakeLock = null;
 async function keepAwake(on) {
@@ -431,7 +403,7 @@ const FPS = 20;
 function startMode(key) {
   stopMode(false);
   const m = MODES[key];
-  current = key; lastModeKey = key; state = {}; keepAwake(true); startTime = performance.now(); simTime = 0; lastTick = startTime;
+  current = key; state = {}; keepAwake(true); startTime = performance.now(); simTime = 0; lastTick = startTime;
   document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('active', b.dataset.k === key));
   log('Mode: ' + m.name);
   const go = () => { rafId = true; };
@@ -455,12 +427,11 @@ function stopMode(clear = true) {
   current = null; lastFrame = null; keepAwake(false);
   if (clear) document.querySelectorAll('.modes button').forEach(b => b.classList.remove('active'));
 }
-$('stopBtn').onclick = () => stopMode();
 
 Object.entries(MODES).forEach(([k, m]) => {
   const b = document.createElement('button'); b.dataset.k = k;
   b.innerHTML = `${m.name}<span>${m.desc}</span>`;
-  b.onclick = () => startMode(k);
+  b.onclick = () => current === k ? stopMode() : startMode(k);
   $('modes').appendChild(b);
 });
 
