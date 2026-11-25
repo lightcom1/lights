@@ -198,13 +198,13 @@
         font-size: 12px;
         text-decoration: underline;
       }
-      canvas.runpv {
-        display: block;
-        width: 100%;
-        height: 14px;
-        border-radius: 6px;
-        background: #000;
-        margin-bottom: 6px;
+      .styles {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .styles button {
+        min-width: 44px;
       }
       #log {
         height: 140px;
@@ -306,39 +306,24 @@
           <h2>
             Running lights
             <span class="note" style="text-transform: none; letter-spacing: 0"
-              >— runs on the strip itself (WS2812B), keeps going with the page closed</span
+              >— runs on the strip itself, keeps going with the page closed</span
             >
           </h2>
-          <canvas id="runPreview" class="runpv" height="14"></canvas>
           <div class="row">
             <label>Background</label
             ><input type="color" id="runBase" value="#1a0040" />
             <label style="min-width: 0">Runner</label
             ><input type="color" id="runDot" value="#00e5ff" />
-            <label style="min-width: 0">Runners</label
-            ><select id="runCount">
-              <option>1</option><option selected>2</option><option>3</option><option>4</option><option>6</option>
-            </select>
-            <label style="min-width: 0">Size (LEDs)</label
-            ><select id="runSize">
-              <option>3</option><option selected>4</option><option>5</option><option>6</option><option>8</option><option>10</option><option>12</option>
-            </select>
-            <label style="min-width: 0">Tail</label><input type="checkbox" id="runTail" checked />
+            <label style="min-width: 0">Speed</label
+            ><input type="range" id="runSpeed" min="1" max="100" value="50" />
           </div>
           <div class="row">
-            <label>Effect</label
-            ><select id="runFx">
-              <option value="2" selected>Running</option>
-              <option value="1">Static</option>
-              <option value="5">Breathing</option>
-              <option value="4">Jump</option>
-            </select>
-            <label style="min-width: 0">Speed</label
-            ><input type="range" id="runSpeed" min="1" max="100" value="40" />
-            <label style="min-width: 0">LEDs</label
-            ><input type="number" id="runPoints" value="216" min="1" max="255" style="width: 70px" />
-            <button class="primary" id="runSend">Start running lights</button>
+            <label>Style</label>
+            <div class="styles" id="runStyles"></div>
           </div>
+          <p class="note">
+            Each style is one of the controller's foreground/background effects — tap through them to find the running one you like.
+          </p>
         </section>
         <section>
           <h2>Color</h2>
@@ -496,9 +481,9 @@
           seq,
           0x80,
           0x00,
-          0x00,
-          len,
-          len + 1,
+          (len >> 8) & 0xff,
+          len & 0xff,
+          (len + 1) & 0xff,
           0x0b,
           ...payload,
         ]);
@@ -601,8 +586,9 @@
           const delay = clamp(Math.round(31 - speed * 0.3), 1, 31);
           return withChecksum([0x61, mode, delay, 0x0f]);
         }
+        // 0x42 = effect command used by ZENGGE strip controllers (ids 1–99, 255 = cycle all)
         return withChecksum([
-          0x38,
+          0x42,
           n & 0xff,
           clamp(speed, 1, 100),
           clamp(bright, 1, 100),
@@ -1170,74 +1156,43 @@
       };
 
       /* ============================================================
-       *  RUNNING LIGHTS — addressable (WS2812B) "multi-color zones" command.
-       *  The strip is split into zones of `size` LEDs; each zone gets a color,
-       *  and the controller itself animates the pattern (so it keeps running
-       *  with the page closed).
-       *    59 LEN_HI LEN_LO  [R G B] × zones  POINTS EFFECT SPEED  checksum
-       *  effect: 1 static, 2 running, 4 jump, 5 breathing
+       *  RUNNING LIGHTS — controller's foreground/background effects (0x41)
+       *    41 ID  FG_R FG_G FG_B  BG_R BG_G BG_B  SPEED 00 00 F0  checksum
+       *  ids 2–10; runs on the strip itself, so it keeps going with the page closed
        * ============================================================ */
-      function runPattern() {
-        const points = clamp(+$('runPoints').value || 216, 1, 255),
-          size = +$('runSize').value,
-          zones = Math.min(80, Math.ceil(points / size)), // keep the packet under BLE limits
-          runners = +$('runCount').value,
-          bg = hexToRgb($('runBase').value),
-          dot = hexToRgb($('runDot').value),
-          tail = $('runTail').checked;
-        const list = Array.from({ length: zones }, () => bg);
-        for (let i = 0; i < runners; i++) {
-          const at = Math.floor((i * zones) / runners);
-          list[at] = dot;
-          if (tail) {
-            list[(at - 1 + zones) % zones] = mix(bg, dot, 0.45);
-            list[(at - 2 + zones) % zones] = mix(bg, dot, 0.15);
-          }
-        }
-        return { points, size, zones, list };
+      function cmdFgBg(id, fg, bg, speed) {
+        return withChecksum([
+          0x41,
+          id,
+          ...scale(fg, masterBright()),
+          ...scale(bg, masterBright()),
+          clamp(speed, 1, 100),
+          0x00,
+          0x00,
+          0xf0,
+        ]);
       }
-      function cmdZones(list, points, effect, speed) {
-        const n = list.length,
-          msg = [0x59, ((3 * n + 6) >> 8) & 0xff, (3 * n + 6) & 0xff];
-        list.forEach((c) => msg.push(...scale(c, masterBright())));
-        msg.push(points & 0xff, effect, clamp(speed, 1, 100));
-        return withChecksum(msg);
-      }
-      $('runSend').onclick = () => {
+      let runStyle = null;
+      function sendRun() {
+        if (!runStyle) return;
         stopMode();
-        const { points, zones, size, list } = runPattern();
-        log(`Running lights: ${zones} zones × ${size} LEDs, effect ${$('runFx').value}`);
-        sendPayload(cmdZones(list, points, +$('runFx').value, +$('runSpeed').value), {
-          withResponse: true,
-        });
-      };
-      // preview: draw the zone pattern on 216 "LEDs" and scroll it like the controller will
-      function drawRunPreview(now) {
-        const cv = $('runPreview'),
-          w = cv.clientWidth;
-        if (w) {
-          if (cv.width !== w) cv.width = w;
-          const ctx = cv.getContext('2d'),
-            { points, size, zones, list } = runPattern(),
-            fx = +$('runFx').value,
-            spd = +$('runSpeed').value,
-            t = now / 1000;
-          const shift = fx === 2 ? Math.floor(t * (2 + spd * 0.4)) : 0;
-          const k = fx === 5 ? 0.15 + 0.85 * swell(t * (0.2 + spd / 60), 1) : 1;
-          const ledW = w / points;
-          ctx.clearRect(0, 0, w, cv.height);
-          for (let i = 0; i < points; i++) {
-            const z = Math.floor(i / size) % zones;
-            let c = list[(((z - Math.floor(shift / size)) % zones) + zones) % zones];
-            if (fx === 4) c = Math.floor(t * (0.5 + spd / 30)) % 2 ? list[0] : c;
-            c = scale(c, k);
-            ctx.fillStyle = `rgb(${c.join(',')})`;
-            ctx.fillRect(i * ledW + 0.5, 2, Math.max(1, ledW - 1), cv.height - 4);
-          }
-        }
-        requestAnimationFrame(drawRunPreview);
+        sendPayload(
+          cmdFgBg(runStyle, hexToRgb($('runDot').value), hexToRgb($('runBase').value), +$('runSpeed').value),
+        );
       }
-      requestAnimationFrame(drawRunPreview);
+      for (let id = 2; id <= 10; id++) {
+        const b = document.createElement('button');
+        b.textContent = id - 1;
+        b.onclick = () => {
+          runStyle = id;
+          document.querySelectorAll('#runStyles button').forEach((x) => x.classList.toggle('active', x === b));
+          log('Running lights style ' + (id - 1));
+          sendRun();
+        };
+        $('runStyles').appendChild(b);
+      }
+      // re-send when colors/speed change, so tweaks apply live
+      ['runBase', 'runDot', 'runSpeed'].forEach((id) => ($(id).onchange = sendRun));
 
       /* ---------- built-in effects & raw ---------- */
       $('fxSend').onclick = () => {
