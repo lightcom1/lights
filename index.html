@@ -69,9 +69,8 @@
 <div class="wrap">
   <header>
     <div class="orb" id="orb"></div>
-    <h1>Strip Studio<br><span class="status">Status: <b class="off" id="st">disconnected</b> <span id="devname"></span></span></h1>
+    <h1>LED control<br><span class="status">Status: <b class="off" id="st">disconnected</b> <span id="devname"></span></span></h1>
     <button class="primary" id="connectBtn">Connect</button>
-    <button id="scanAllBtn" title="List every nearby Bluetooth device">Scan all</button>
     <button id="onBtn">On</button>
     <button id="offBtn">Off</button>
   </header>
@@ -96,7 +95,7 @@
     <section>
       <h2>Mode settings</h2>
       <div class="row"><label>Speed</label><input type="range" id="speed" min="1" max="100" value="50"><span id="speedV">50</span></div>
-      <div class="row"><label>Base color</label><input type="color" id="modeColor" value="#ff3c00"><span class="note">used by Breathe, Heartbeat, Strobe…</span></div>
+      <div class="row"><label>Base color</label><input type="color" id="modeColor" value="#ff3c00"><span class="note">used by Breathe &amp; Heartbeat</span></div>
     </section>
 
 
@@ -140,7 +139,6 @@
  * ============================================================ */
 const uuid16 = n => `0000${n.toString(16).padStart(4, '0')}-0000-1000-8000-00805f9b34fb`;
 const SERVICE = uuid16(0xffff), WRITE_CHAR = uuid16(0xff01), NOTIFY_CHAR = uuid16(0xff02);
-const NAME_PREFIXES = ['LEDnetWF', 'IOTWF', 'IOTB', 'Zengge', 'ZENGGE', 'LEDBLE', 'Triones', 'LED'];
 
 const $ = id => document.getElementById(id);
 const logEl = $('log');
@@ -250,26 +248,26 @@ function setRgb(rgb, quiet = true) {
 }
 
 /* ---------- connection ---------- */
-async function connect(all = false) {
+async function connect() {
   if (!navigator.bluetooth) { $('nobt').style.display = 'block'; return; }
   try {
-    log('Scanning… pick your strip (usually named LEDnetWF…). Close the ZENGGE app first!');
-    if (all) {
-      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
-    } else try {
-      device = await navigator.bluetooth.requestDevice({
-        filters: [...NAME_PREFIXES.map(namePrefix => ({ namePrefix })), { services: [SERVICE] }],
-        optionalServices: [SERVICE],
-      });
-    } catch (e) {
-      if (e && (e.name === 'NotFoundError' && /cancel/i.test(e.message || ''))) throw e;
-      log('Filtered scan failed (' + errText(e) + ') — showing all nearby devices instead');
-      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
+    // 1) Reconnect straight to a strip this browser already paired with (no picker)
+    if (navigator.bluetooth.getDevices) {
+      for (const d of await navigator.bluetooth.getDevices()) {
+        try {
+          device = d; device.addEventListener('gattserverdisconnected', onDisconnect);
+          log('Reconnecting to saved strip ' + (d.name || '') + '…');
+          await Promise.race([openGatt(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000))]);
+          return;
+        } catch (e) { device.removeEventListener('gattserverdisconnected', onDisconnect); device = null; }
+      }
     }
+    // 2) Otherwise show every nearby device — the strip doesn't broadcast a name, so name filters miss it
+    log('Pick your strip from the list (it may show as "Unknown or unsupported device"). Close the ZENGGE app first!');
+    device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
     device.addEventListener('gattserverdisconnected', onDisconnect);
-    log('Selected: ' + (device.name || '(no name)') + ' id=' + device.id);
     await openGatt();
-  } catch (e) { log('Connect error: ' + errText(e)); $('st').textContent = 'disconnected'; }
+  } catch (e) { log('Connect error: ' + errText(e)); $('st').textContent = 'disconnected'; $('st').className = 'off'; }
 }
 async function openGatt() {
   $('st').textContent = 'connecting…';
@@ -303,7 +301,6 @@ $('connectBtn').onclick = () => {
   if (device && device.gatt.connected) { manualDisconnect = true; stopMode(); device.gatt.disconnect(); device = null; }
   else { manualDisconnect = false; connect(); }
 };
-$('scanAllBtn').onclick = () => { manualDisconnect = false; connect(true); };
 $('onBtn').onclick = () => sendPayload(cmdPower(true));
 $('offBtn').onclick = () => { stopMode(); sendPayload(cmdPower(false)); showOrb([0, 0, 0]); };
 
@@ -358,29 +355,10 @@ const MODES = {
                  const p = (t * 0.9) % 1;
                  const k = Math.exp(-Math.pow((p - 0.1) / 0.04, 2)) + 0.7 * Math.exp(-Math.pow((p - 0.3) / 0.05, 2));
                  return scale(base(), 0.04 + 0.96 * k); } },
-  police:    { name: 'Police', desc: 'red / blue strobe', fn: t => {
-                 const p = (t * 2) % 2, sub = (p % 1) * 6 | 0;
-                 if (sub % 2) return [0, 0, 0];
-                 return p < 1 ? [255, 0, 0] : [0, 30, 255]; } },
-  strobe:    { name: 'Strobe', desc: 'party flash', fn: t => ((t * 8) % 1) < 0.25 ? base() : [0, 0, 0] },
-  disco:     { name: 'Disco', desc: 'random color hits', fn: (t, s) => {
-                 const beat = Math.floor(t * 2.5);
-                 if (beat !== s.beat) { s.beat = beat; s.c = hsvToRgb(Math.random() * 360, 1, 1); }
-                 return scale(s.c, 1 - ((t * 2.5) % 1) * 0.7); } },
   sunset:    { name: 'Sunset', desc: 'gold → pink → indigo', fn: t => {
                  const stops = [[255, 170, 40], [255, 80, 60], [200, 40, 120], [60, 20, 140], [255, 170, 40]];
                  const x = (t * 0.08) % 1 * (stops.length - 1), i = Math.floor(x);
                  return mix(stops[i], stops[i + 1], x - i); } },
-  matrix:    { name: 'Matrix', desc: 'glitchy green', fn: t => {
-                 const g = noise(t * 25) > 0.75 ? 1 : 0.25 + 0.35 * noise(t * 2);
-                 return scale([0, 255, 60], g); } },
-  sunrise:   { name: 'Wake-up sunrise', desc: '20 min, real-time', realtime: true, fn: t => {
-                 const x = clamp(t / (20 * 60), 0, 1);
-                 const c = x < 0.4 ? mix([0, 0, 0], [120, 10, 0], x / 0.4)
-                         : x < 0.75 ? mix([120, 10, 0], [255, 110, 20], (x - 0.4) / 0.35)
-                         : mix([255, 110, 20], [255, 230, 190], (x - 0.75) / 0.25);
-                 return c; } },
-  music:     { name: '🎤 Music', desc: 'reacts to your mic', setup: setupMic, fn: musicFrame },
 };
 
 
@@ -437,37 +415,6 @@ Object.entries(MODES).forEach(([k, m]) => {
 const clock = new Worker(URL.createObjectURL(new Blob(
   [`setInterval(() => postMessage(0), ${Math.round(1000 / FPS)});`], { type: 'text/javascript' })));
 clock.onmessage = () => { if (current && rafId) tick(performance.now()); };
-
-/* ---------- music mode (Web Audio) ---------- */
-let audio = null;
-async function setupMic() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-  const ctx = new AudioContext();
-  const src = ctx.createMediaStreamSource(stream);
-  const an = ctx.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.6;
-  src.connect(an);
-  audio = { ctx, an, stream, buf: new Uint8Array(an.frequencyBinCount), avg: 20, hue: 0, level: 0 };
-  MODES.music.teardown = () => { stream.getTracks().forEach(t => t.stop()); ctx.close(); audio = null; };
-}
-function musicFrame() {
-  if (!audio) return [0, 0, 0];
-  const { an, buf } = audio;
-  an.getByteFrequencyData(buf);
-  const binHz = audio.ctx.sampleRate / an.fftSize;
-  let bass = 0, nb = 0, tot = 0, wsum = 0;
-  for (let i = 1; i < buf.length; i++) {
-    const f = i * binHz;
-    if (f < 160) { bass += buf[i]; nb++; }
-    tot += buf[i]; wsum += buf[i] * i;
-  }
-  bass /= nb || 1;
-  audio.avg = audio.avg * 0.97 + bass * 0.03;                // adaptive gain
-  const hit = clamp((bass - audio.avg * 0.9) / (audio.avg * 0.8 + 10), 0, 1);
-  audio.level = Math.max(hit, audio.level * 0.82);           // fast attack, smooth decay
-  const centroid = tot ? wsum / tot / buf.length : 0;        // brightness of sound → hue
-  audio.hue = (audio.hue + 0.6 + hit * 8) % 360;
-  return hsvToRgb(audio.hue + centroid * 240, 1, 0.08 + 0.92 * audio.level);
-}
 
 
 /* ---------- built-in effects & raw ---------- */
