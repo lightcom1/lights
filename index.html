@@ -61,7 +61,7 @@
 <div class="wrap">
   <header>
     <div class="orb" id="orb"></div>
-    <h1>Strip Studio<br><span class="status">Status: <b class="off" id="st">disconnected</b> <span id="devname"></span></span></h1>
+    <h1>Strip Studio<br><span class="status">Status: <b class="off" id="st">disconnected</b></span></h1>
     <button class="primary" id="connectBtn">Connect</button>
     <button id="onBtn">On</button>
     <button id="offBtn">Off</button>
@@ -258,7 +258,6 @@ async function openGatt() {
     n.addEventListener('characteristicvaluechanged', ev => log('← ' + hex(new Uint8Array(ev.target.value.buffer))));
   } catch (e) { log('(no notify characteristic: ' + e.message + ')'); }
   $('st').textContent = 'connected'; $('st').className = 'on';
-  $('devname').textContent = '· ' + (device.name || device.id);
   $('connectBtn').textContent = 'Disconnect';
   log('Connected to ' + (device.name || device.id));
 }
