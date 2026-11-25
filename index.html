@@ -377,6 +377,26 @@
             Each style is one of the controller's foreground/background effects — tap through them to find the running one you like.
           </p>
 
+          <h3 class="sub">Pixel effects <span class="note">— beta: drawn LED-by-LED in the browser, keep the page open</span></h3>
+          <div class="row">
+            <button id="pxTest">① Test pattern</button>
+            <span class="note">Should show red · green · blue thirds. If nothing changes, switch format and test again:</span>
+            <select id="pxFormat">
+              <option value="smear">Format A</option>
+              <option value="flux">Format B</option>
+            </select>
+          </div>
+          <div class="fxgrid" id="pxFx"></div>
+          <div class="row">
+            <label style="min-width: 0">Group size</label
+            ><input type="number" id="pxLen" value="10" min="1" max="50" style="width: 64px" />
+            <label style="min-width: 0">Waves</label
+            ><input type="number" id="pxWaves" value="2" min="1" max="6" style="width: 64px" />
+            <label style="min-width: 0">LEDs</label
+            ><input type="number" id="pxPoints" value="216" min="1" max="600" style="width: 72px" />
+            <span class="note">uses Background / Runner colors and Speed above</span>
+          </div>
+
           <h3 class="sub">My effects <span class="note">— your saved favorites from the browser below</span></h3>
           <div class="fxgrid" id="favs"><span class="note" id="favEmpty">Nothing saved yet — find one below and tap ★.</span></div>
 
@@ -556,6 +576,27 @@
         ]);
       }
 
+      /* Long commands are split into fragments (per the reverse-engineered LEDnetWF framing):
+       *  first:     40 SEQ [80 if last] 00  TOTAL_HI TOTAL_LO  BYTES_TO_END  0B  data…
+       *  follow-up: 40 SEQ [80 if last] IDX BYTES_TO_END  data…
+       */
+      const FRAG_SIZE = 240;
+      function wrapFragments(payload) {
+        seq = (seq + 1) & 0xff;
+        const total = payload.length,
+          out = [];
+        for (let i = 0, off = 0; off < total; i++, off += FRAG_SIZE) {
+          const chunk = payload.slice(off, off + FRAG_SIZE),
+            last = off + FRAG_SIZE >= total ? 0x80 : 0x00;
+          const head =
+            i === 0
+              ? [0x40, seq, last, 0, (total >> 8) & 0xff, total & 0xff, (chunk.length + 1) & 0xff, 0x0b]
+              : [0x40, seq, last, i, chunk.length & 0xff];
+          out.push(new Uint8Array([...head, ...chunk]));
+        }
+        return out;
+      }
+
       /* ---------- color math ---------- */
       function rgbToHsv(r, g, b) {
         r /= 255;
@@ -674,16 +715,18 @@
         while (pending) {
           const { payload: p, quiet: q, withResponse: wr } = pending;
           pending = null;
-          const pkt = p.raw ? p.raw : wrap(p);
+          const pkts = p.raw ? [p.raw] : p.length > FRAG_SIZE ? wrapFragments(p) : [wrap(p)];
           try {
-            if (
-              !(wr || pkt.length > 180) &&
-              writeChar.properties.writeWithoutResponse &&
-              writeChar.writeValueWithoutResponse
-            )
-              await writeChar.writeValueWithoutResponse(pkt);
-            else await writeChar.writeValue(pkt);
-            if (!q && verbose) log('→ ' + hex(pkt));
+            for (const pkt of pkts) {
+              if (
+                !(wr || pkt.length > 180) &&
+                writeChar.properties.writeWithoutResponse &&
+                writeChar.writeValueWithoutResponse
+              )
+                await writeChar.writeValueWithoutResponse(pkt);
+              else await writeChar.writeValue(pkt);
+              if (!q && verbose) log('→ ' + hex(pkt));
+            }
           } catch (e) {
             log('Write failed: ' + errText(e));
           }
@@ -1167,6 +1210,7 @@
       }
       function stopMode(clear = true) {
         rafId = null;
+        if (typeof stopPixels === 'function' && pxActive) stopPixels();
         if (current && MODES[current].teardown) MODES[current].teardown();
         current = null;
         lastFrame = null;
@@ -1220,6 +1264,7 @@
       );
       clock.onmessage = () => {
         if (current && rafId) tick(performance.now());
+        if (typeof pxActive !== 'undefined' && pxActive) pixelTick(performance.now());
       };
 
       /* ============================================================
@@ -1272,7 +1317,7 @@
 
       function markActive(btn) {
         document
-          .querySelectorAll('#runStyles button, #favs button, #fxBrowse button')
+          .querySelectorAll('#runStyles button, #favs button, #fxBrowse button, #pxFx button')
           .forEach((x) => x.classList.toggle('active', x === btn));
       }
 
@@ -1341,6 +1386,139 @@
         renderFavs();
       };
       renderFavs();
+
+      /* ============================================================
+       *  PIXEL EFFECTS (beta) — per-LED frames via command 0x59.
+       *  Format A ("smear", seen on LEDnetWF 0x53):  59 [RGB × N] MODE SPEED BRIGHT DIR  cs
+       *  Format B (flux_led addressable):          59 LEN_HI LEN_LO [RGB × N] 00 1E MODE SPEED 00  cs
+       *  MODE 1 = static (we stream frames), 2 = stream (controller scrolls it)
+       * ============================================================ */
+      const pxPoints = () => clamp(+$('pxPoints').value || 216, 1, 600);
+      function cmdPixels(frame, mode = 1, speed = 50, dir = 0) {
+        const rgb = [];
+        frame.forEach((c) => rgb.push(...scale(c, masterBright())));
+        if ($('pxFormat').value === 'flux') {
+          const len = rgb.length + 9;
+          return withChecksum([0x59, (len >> 8) & 0xff, len & 0xff, ...rgb, 0x00, 0x1e, mode, speed, 0x00]);
+        }
+        return withChecksum([0x59, ...rgb, mode, speed, 100, dir]);
+      }
+      $('pxTest').onclick = () => {
+        stopMode();
+        const n = pxPoints(),
+          frame = Array.from({ length: n }, (_, i) =>
+            i < n / 3 ? [255, 0, 0] : i < (2 * n) / 3 ? [0, 255, 0] : [0, 0, 255],
+          );
+        log(`Pixel test (${$('pxFormat').selectedOptions[0].text}, ${n} LEDs)`);
+        sendPayload(cmdPixels(frame), { withResponse: true });
+      };
+
+      // frame renderers: (t seconds, n LEDs) -> array of [r,g,b]
+      const pxFg = () => hexToRgb($('runDot').value),
+        pxBg = () => hexToRgb($('runBase').value);
+      const PIXEL_FX = {
+        burst: {
+          name: 'Center burst',
+          desc: 'groups fly out from the middle',
+          fn: (t, n) => {
+            const L = clamp(+$('pxLen').value || 10, 1, 50),
+              waves = clamp(+$('pxWaves').value || 2, 1, 6),
+              half = n / 2,
+              cycle = half + L,
+              fg = pxFg(),
+              bg = pxBg(),
+              f = Array.from({ length: n }, () => bg);
+            for (let w = 0; w < waves; w++) {
+              const head = (t * 40 + (w * cycle) / waves) % cycle; // distance of group's leading edge from center
+              for (let k = 0; k < L; k++) {
+                const d = Math.floor(head - k);
+                if (d < 0 || d >= half) continue;
+                const c = mix(bg, fg, 1 - (k / L) * 0.7); // brighter leading edge, soft tail
+                f[Math.floor(half + d)] = c;
+                f[Math.ceil(half - 1 - d)] = c;
+              }
+            }
+            return f;
+          },
+        },
+        implode: {
+          name: 'Center implode',
+          desc: 'groups rush into the middle',
+          fn: (t, n) => PIXEL_FX.burst.fn(-t + 1000, n),
+        },
+        comet: {
+          name: 'Comet',
+          desc: 'one runner with a long tail',
+          fn: (t, n) => {
+            const bg = pxBg(),
+              fg = pxFg(),
+              L = clamp((+$('pxLen').value || 10) * 2, 2, 100),
+              head = (t * 45) % (n + L);
+            return Array.from({ length: n }, (_, i) => {
+              const d = head - i;
+              return d >= 0 && d < L ? mix(bg, fg, Math.pow(1 - d / L, 1.5)) : bg;
+            });
+          },
+        },
+        rainbowBurst: {
+          name: 'Rainbow from center',
+          desc: 'rainbow rings flowing outward',
+          fn: (t, n) =>
+            Array.from({ length: n }, (_, i) => hsvToRgb(Math.abs(i - n / 2) * 4 - t * 120, 1, 1)),
+        },
+        fire: {
+          name: 'Fire (pixel)',
+          desc: 'every LED flickers on its own',
+          fn: (t, n) =>
+            Array.from({ length: n }, (_, i) => {
+              const v = noise(t * 5 + i * 0.37) * 0.65 + noise(t * 13 + i * 1.7 + 50) * 0.35;
+              return hsvToRgb(4 + v * 30, 1, Math.pow(v, 1.6));
+            }),
+        },
+        sparkle: {
+          name: 'Twinkle',
+          desc: 'random LEDs softly glow',
+          fn: (t, n) => {
+            const bg = pxBg(),
+              fg = pxFg();
+            return Array.from({ length: n }, (_, i) => {
+              const ph = hash(i) * 10,
+                w = Math.max(0, Math.sin(t * (0.6 + hash(i + 7)) + ph));
+              return mix(bg, fg, Math.pow(w, 8));
+            });
+          },
+        },
+      };
+      let pxActive = null,
+        pxT = 0,
+        pxLast = 0;
+      Object.entries(PIXEL_FX).forEach(([k, fx]) => {
+        const b = document.createElement('button');
+        b.innerHTML = `${fx.name}<small>${fx.desc}</small>`;
+        b.onclick = () => {
+          if (pxActive === k) return stopPixels();
+          stopMode();
+          markActive(b);
+          pxActive = k;
+          pxT = 0;
+          pxLast = performance.now();
+          keepAwake(true);
+          log('Pixel effect: ' + fx.name + ' (streaming)');
+        };
+        $('pxFx').appendChild(b);
+      });
+      function stopPixels() {
+        pxActive = null;
+        document.querySelectorAll('#pxFx button').forEach((x) => x.classList.remove('active'));
+      }
+      function pixelTick(now) {
+        if (!pxActive || !writeChar) return;
+        const spd = Math.pow(4, (+$('runSpeed').value - 50) / 50);
+        pxT += ((now - pxLast) / 1000) * spd;
+        pxLast = now;
+        if (busy) return; // previous frame still being written — skip, stay smooth
+        sendPayload(cmdPixels(PIXEL_FX[pxActive].fn(pxT, pxPoints())), { quiet: true, withResponse: true });
+      }
 
       /* ---------- built-in effects & raw ---------- */
       $('fxSend').onclick = () => {
