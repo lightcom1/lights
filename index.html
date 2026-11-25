@@ -89,7 +89,8 @@
         <select id="timer"><option value="0">off</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select>
         <span class="note" id="timerV"></span>
       </div>
-      <div class="row"><button id="stopBtn">■ Stop mode</button></div>
+      <div class="row"><button id="stopBtn">■ Stop mode</button><button id="saveBtn">💾 Save mode to strip</button></div>
+      <p class="note" id="saveNote">Saves the selected mode onto the controller as a color program, so it keeps running with the app closed. (Fireplace, Storm, Music etc. are live-only.) Experimental: works on most ZENGGE controllers.</p>
     </section>
 
     <section class="full">
@@ -375,13 +376,62 @@ const MODES = {
   music:     { name: '🎤 Music', desc: 'reacts to your mic', setup: setupMic, fn: musicFrame },
 };
 
+
+/* Programs that can be stored ON the controller (max 16 colors) — keep running with the app closed */
+const PROGRAMS = {
+  rainbow:   { trans: 'fade',   colors: () => [0, 45, 90, 135, 180, 225, 270, 315].map(h => hsvToRgb(h, 1, 1)) },
+  breathe:   { trans: 'fade',   colors: () => [base(), scale(base(), 0.05)] },
+  aurora:    { trans: 'fade',   colors: () => [[0, 255, 120], [0, 180, 160], [60, 0, 200], [0, 255, 60], [120, 0, 180], [0, 200, 200]] },
+  ocean:     { trans: 'fade',   colors: () => [[0, 160, 255], [0, 60, 160], [0, 220, 220], [0, 40, 120]] },
+  lava:      { trans: 'fade',   colors: () => [[255, 0, 60], [160, 0, 160], [255, 30, 0], [200, 0, 120]] },
+  sunset:    { trans: 'fade',   colors: () => [[255, 170, 40], [255, 80, 60], [200, 40, 120], [60, 20, 140]] },
+  candle:    { trans: 'fade',   colors: () => [[255, 120, 25], [200, 80, 10], [255, 140, 40], [180, 70, 10]] },
+  heartbeat: { trans: 'fade',   colors: () => [base(), scale(base(), 0.1), base(), scale(base(), 0.05), scale(base(), 0.05)] },
+  police:    { trans: 'jump',   colors: () => [[255, 0, 0], [0, 0, 0], [255, 0, 0], [0, 0, 0], [0, 30, 255], [0, 0, 0], [0, 30, 255], [0, 0, 0]] },
+  strobe:    { trans: 'strobe', colors: () => [base()] },
+  disco:     { trans: 'jump',   colors: () => Array.from({ length: 12 }, () => hsvToRgb(Math.random() * 360, 1, 1)) },
+  matrix:    { trans: 'fade',   colors: () => [[0, 255, 60], [0, 60, 15], [0, 120, 30], [0, 255, 60], [0, 40, 10]] },
+};
+function cmdCustomProgram(colors, speed, trans) {
+  const msg = [0x51];
+  const list = colors.slice(0, 16).map(c => scale(c, masterBright()));
+  for (let i = 0; i < 16; i++) {
+    const c = list[i];
+    if (c) msg.push(c[0], c[1], c[2], 0); else msg.push(1, 2, 3, 0); // 01 02 03 = unused slot
+  }
+  const delay = clamp(Math.round(31 - speed * 0.3), 1, 31);
+  msg.push(delay, { fade: 0x3a, jump: 0x3b, strobe: 0x3c }[trans], 0xff, 0x0f);
+  return withChecksum(msg);
+}
+let lastModeKey = null;
+$('saveBtn').onclick = () => {
+  if (!writeChar) { log('Connect to the strip first'); return; }
+  const key = current || lastModeKey;
+  if (!key) { log('Pick a mode first, then Save'); return; }
+  const prog = PROGRAMS[key];
+  if (!prog) { log(`"${MODES[key].name}" is live-only (reacts in real time) and can't be stored on the strip`); return; }
+  stopMode();
+  sendPayload(cmdCustomProgram(prog.colors(), +$('speed').value, prog.trans));
+  log(`Saved "${MODES[key].name}" to the strip — you can close the app now. If nothing changed, your controller doesn't support custom programs; use Built-in effects instead.`);
+};
+
+/* Keep the screen on while a live mode runs (iOS suspends apps in background) */
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => wakeLock = null); }
+    if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) { /* not supported */ }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && current) keepAwake(true); });
+
 let current = null, startTime = 0, rafId = null, state = {}, lastSend = 0, simTime = 0, lastTick = 0;
 const FPS = 20;
 
 function startMode(key) {
   stopMode(false);
   const m = MODES[key];
-  current = key; state = {}; startTime = performance.now(); simTime = 0; lastTick = startTime;
+  current = key; lastModeKey = key; state = {}; keepAwake(true); startTime = performance.now(); simTime = 0; lastTick = startTime;
   document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('active', b.dataset.k === key));
   log('Mode: ' + m.name);
   const go = () => { rafId = requestAnimationFrame(tick); };
@@ -404,7 +454,7 @@ function stopMode(clear = true) {
   if (rafId) cancelAnimationFrame(rafId);
   rafId = null;
   if (current && MODES[current].teardown) MODES[current].teardown();
-  current = null; lastFrame = null;
+  current = null; lastFrame = null; keepAwake(false);
   if (clear) document.querySelectorAll('.modes button').forEach(b => b.classList.remove('active'));
 }
 $('stopBtn').onclick = () => stopMode();
