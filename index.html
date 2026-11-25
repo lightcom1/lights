@@ -379,8 +379,9 @@
 
           <h3 class="sub">Pixel effects <span class="note">— beta: drawn LED-by-LED in the browser, keep the page open</span></h3>
           <div class="row">
-            <button id="pxTest">① Test pattern</button>
-            <span class="note">Should show red · green · blue thirds. If nothing changes, switch format and test again:</span>
+            <button id="pxTestSmall">① Small test</button>
+            <button id="pxTest">② Full test</button>
+            <span class="note">① lights the first 48 LEDs red · green · blue (one short packet). ② does the whole strip red · green · blue. If nothing changes, switch format and retry:</span>
             <select id="pxFormat">
               <option value="smear">Format A</option>
               <option value="flux">Format B</option>
@@ -718,13 +719,17 @@
           const pkts = p.raw ? [p.raw] : p.length > FRAG_SIZE ? wrapFragments(p) : [wrap(p)];
           try {
             for (const pkt of pkts) {
-              if (
+              const w =
                 !(wr || pkt.length > 180) &&
                 writeChar.properties.writeWithoutResponse &&
                 writeChar.writeValueWithoutResponse
-              )
-                await writeChar.writeValueWithoutResponse(pkt);
-              else await writeChar.writeValue(pkt);
+                  ? writeChar.writeValueWithoutResponse(pkt)
+                  : writeChar.writeValue(pkt);
+              // never let a stuck write freeze the app
+              await Promise.race([
+                w,
+                new Promise((_, rej) => setTimeout(() => rej(new Error(`no answer from strip (${pkt.length}-byte write)`)), 3000)),
+              ]);
               if (!q && verbose) log('→ ' + hex(pkt));
             }
           } catch (e) {
@@ -1403,6 +1408,12 @@
         }
         return withChecksum([0x59, ...rgb, mode, speed, 100, dir]);
       }
+      $('pxTestSmall').onclick = () => {
+        stopMode();
+        const frame = Array.from({ length: 48 }, (_, i) => (i < 16 ? [255, 0, 0] : i < 32 ? [0, 255, 0] : [0, 0, 255]));
+        log(`Pixel small test (${$('pxFormat').selectedOptions[0].text}, 48 LEDs, unfragmented)`);
+        sendPayload(cmdPixels(frame), { withResponse: true });
+      };
       $('pxTest').onclick = () => {
         stopMode();
         const n = pxPoints(),
