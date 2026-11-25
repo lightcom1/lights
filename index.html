@@ -129,7 +129,8 @@
  *  Every command is wrapped as:
  *     00 SEQ 80 00 00 LEN LEN+1 0B  <payload incl. checksum>
  * ============================================================ */
-const SERVICE = 0xffff, WRITE_CHAR = 0xff01, NOTIFY_CHAR = 0xff02;
+const uuid16 = n => `0000${n.toString(16).padStart(4, '0')}-0000-1000-8000-00805f9b34fb`;
+const SERVICE = uuid16(0xffff), WRITE_CHAR = uuid16(0xff01), NOTIFY_CHAR = uuid16(0xff02);
 const NAME_PREFIXES = ['LEDnetWF', 'IOTWF', 'IOTB', 'Zengge', 'ZENGGE', 'LEDBLE', 'Triones', 'LED'];
 
 const $ = id => document.getElementById(id);
@@ -147,6 +148,11 @@ let device = null, writeChar = null, seq = 0;
 let busy = false, pending = null, lastFrame = null;
 let verbose = true;
 
+function errText(e) {
+  if (e == null) return String(e);
+  if (typeof e === 'string') return e;
+  return [e.name, e.message, e.code].filter(x => x != null && x !== '').join(': ') || JSON.stringify(e) || String(e);
+}
 function checksum(bytes) { return bytes.reduce((s, b) => (s + b) & 0xff, 0); }
 function withChecksum(payload) { return [...payload, checksum(payload)]; }
 function wrap(payload) {
@@ -217,7 +223,7 @@ async function sendPayload(payload, { quiet = false } = {}) {
         await writeChar.writeValueWithoutResponse(pkt);
       else await writeChar.writeValue(pkt);
       if (!q && verbose) log('→ ' + hex(pkt));
-    } catch (e) { log('Write failed: ' + e.message); }
+    } catch (e) { log('Write failed: ' + errText(e)); }
   }
   busy = false;
 }
@@ -239,13 +245,19 @@ async function connect() {
   if (!navigator.bluetooth) { $('nobt').style.display = 'block'; return; }
   try {
     log('Scanning… pick your strip (usually named LEDnetWF…). Close the ZENGGE app first!');
-    device = await navigator.bluetooth.requestDevice({
-      filters: [...NAME_PREFIXES.map(namePrefix => ({ namePrefix })), { services: [SERVICE] }],
-      optionalServices: [SERVICE],
-    });
+    try {
+      device = await navigator.bluetooth.requestDevice({
+        filters: [...NAME_PREFIXES.map(namePrefix => ({ namePrefix })), { services: [SERVICE] }],
+        optionalServices: [SERVICE],
+      });
+    } catch (e) {
+      if (e && (e.name === 'NotFoundError' && /cancel/i.test(e.message || ''))) throw e;
+      log('Filtered scan failed (' + errText(e) + ') — showing all nearby devices instead');
+      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
+    }
     device.addEventListener('gattserverdisconnected', onDisconnect);
     await openGatt();
-  } catch (e) { log('Connect error: ' + e.message); }
+  } catch (e) { log('Connect error: ' + errText(e)); $('st').textContent = 'disconnected'; }
 }
 async function openGatt() {
   $('st').textContent = 'connecting…';
@@ -256,7 +268,7 @@ async function openGatt() {
     const n = await svc.getCharacteristic(NOTIFY_CHAR);
     await n.startNotifications();
     n.addEventListener('characteristicvaluechanged', ev => log('← ' + hex(new Uint8Array(ev.target.value.buffer))));
-  } catch (e) { log('(no notify characteristic: ' + e.message + ')'); }
+  } catch (e) { log('(no notify characteristic: ' + errText(e) + ')'); }
   $('st').textContent = 'connected'; $('st').className = 'on';
   $('devname').textContent = '· ' + (device.name || device.id);
   $('connectBtn').textContent = 'Disconnect';
@@ -368,7 +380,7 @@ function startMode(key) {
   document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('active', b.dataset.k === key));
   log('Mode: ' + m.name);
   const go = () => { rafId = requestAnimationFrame(tick); };
-  if (m.setup) m.setup().then(go).catch(e => { log('Mode failed: ' + e.message); stopMode(); });
+  if (m.setup) m.setup().then(go).catch(e => { log('Mode failed: ' + errText(e)); stopMode(); });
   else go();
 }
 function tick(now) {
