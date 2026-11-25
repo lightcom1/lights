@@ -367,7 +367,7 @@
             <label style="min-width: 0">Runner</label
             ><input type="color" id="runDot" value="#00e5ff" />
             <label style="min-width: 0">Speed</label
-            ><input type="range" id="runSpeed" min="1" max="100" value="50" />
+            ><input type="range" id="runSpeed" min="1" max="100" value="50" /><span id="runSpeedV">50</span>
           </div>
           <div class="row">
             <label>Style</label>
@@ -376,9 +376,6 @@
           <p class="note">
             Each style is one of the controller's foreground/background effects — tap through them to find the running one you like.
           </p>
-
-          <h3 class="sub">Scenes <span class="note">— named effects; uses the 7-color palette, may not work on every controller</span></h3>
-          <div class="fxgrid" id="scenes"></div>
 
           <h3 class="sub">My effects <span class="note">— your saved favorites from the browser below</span></h3>
           <div class="fxgrid" id="favs"><span class="note" id="favEmpty">Nothing saved yet — find one below and tap ★.</span></div>
@@ -1242,10 +1239,12 @@
           0xf0,
         ]);
       }
-      let runStyle = null;
+      let runStyle = null,
+        replay = null; // re-sends whatever strip effect is playing (used when Speed changes)
       function sendRun() {
         if (!runStyle) return;
         stopMode();
+        replay = sendRun;
         sendPayload(
           cmdFgBg(runStyle, hexToRgb($('runDot').value), hexToRgb($('runBase').value), +$('runSpeed').value),
         );
@@ -1255,50 +1254,25 @@
         b.textContent = id - 1;
         b.onclick = () => {
           runStyle = id;
+          fxPlaying = null;
           markActive(b);
           log('Running lights style ' + (id - 1));
           sendRun();
         };
         $('runStyles').appendChild(b);
       }
-      // re-send when colors/speed change, so tweaks apply live
-      ['runBase', 'runDot', 'runSpeed'].forEach((id) => ($(id).onchange = sendRun));
+      // re-send when colors change (styles use them); speed re-sends whatever is playing
+      ['runBase', 'runDot'].forEach((id) => ($(id).onchange = () => runStyle && replay === sendRun && sendRun()));
+      let speedTimer = null;
+      $('runSpeed').oninput = () => {
+        $('runSpeedV').textContent = $('runSpeed').value;
+        clearTimeout(speedTimer);
+        speedTimer = setTimeout(() => replay && replay(), 120);
+      };
 
-      /* ---------- Scenes (0x38, named by the ZENGGE app) ---------- */
-      const SCENES = [
-        [7, 'Middle → both ends', 'one dot bursts outward'],
-        [11, 'Fill from middle', 'colors grow outward'],
-        [35, 'Rainbow from middle', '7 colors grow outward'],
-        [8, 'Ends → middle', 'dots meet in the center'],
-        [12, 'Fill to middle', 'colors close inward'],
-        [13, 'Comet', 'fading runner'],
-        [25, 'Fading flow', 'soft trail runs along'],
-        [39, 'Rainbow comet', '7-color fading run'],
-        [15, 'Olive flow', 'smooth swelling waves'],
-        [41, 'Rainbow olive flow', '7-color swelling waves'],
-        [37, 'Rainbow flow', '7 colors flow gradually'],
-        [17, 'Runner on background', 'dot over a lit strip'],
-        [23, 'Two-color chase', 'alternating dots'],
-        [33, 'Rainbow overlay', 'colors stack along strip'],
-        [1, 'Gradual change', 'whole strip fades'],
-      ];
-      function playScene(id) {
-        stopMode();
-        sendPayload(withChecksum([0x38, id, clamp(+$('runSpeed').value, 1, 100), +$('bright').value]));
-      }
-      SCENES.forEach(([id, name, desc]) => {
-        const b = document.createElement('button');
-        b.innerHTML = `${name}<small>${desc}</small>`;
-        b.onclick = () => {
-          markActive(b);
-          log(`Scene ${id}: ${name}`);
-          playScene(id);
-        };
-        $('scenes').appendChild(b);
-      });
       function markActive(btn) {
         document
-          .querySelectorAll('#runStyles button, #scenes button, #favs button, #fxBrowse button')
+          .querySelectorAll('#runStyles button, #favs button, #fxBrowse button')
           .forEach((x) => x.classList.toggle('active', x === btn));
       }
 
@@ -1307,6 +1281,7 @@
       function playStripFx(id) {
         stopMode();
         fxPlaying = id;
+        replay = () => playStripFx(id);
         $('fxNow').textContent = 'Effect ' + id;
         sendPayload(cmdEffect(id, +$('runSpeed').value, +$('bright').value));
       }
@@ -1322,7 +1297,9 @@
       const FAV_KEY = 'led-favs';
       function loadFavs() {
         try {
-          return JSON.parse(localStorage.getItem(FAV_KEY)) || [];
+          const raw = localStorage.getItem(FAV_KEY);
+          if (raw === null) return [{ id: 4, name: 'Colors from middle' }]; // starter favorite
+          return JSON.parse(raw) || [];
         } catch (e) {
           return [];
         }
