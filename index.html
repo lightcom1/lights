@@ -462,7 +462,13 @@ $('rawSend').onclick = () => {
   else sendPayload(withChecksum(bytes));
 };
 
-if (!navigator.bluetooth) $('nobt').style.display = 'block';
+if (!navigator.bluetooth) {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (ios) $('nobt').innerHTML = '<b>iPhone/iPad detected.</b> Apple blocks Bluetooth in Safari, Chrome and home-screen apps on iOS. ' +
+    'Install the free <b>Bluefy – Web BLE Browser</b> from the App Store and open this page in it.';
+  else if (!window.isSecureContext) $('nobt').innerHTML = 'Open this page over <b>https://</b> — Bluetooth is blocked on plain http.';
+  $('nobt').style.display = 'block';
+}
 log('Ready. Tap Connect. Tip: the strip accepts only ONE connection — close the ZENGGE app first.');
 </script>
 </body>
